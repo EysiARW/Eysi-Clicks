@@ -77,6 +77,18 @@
 
   <a href="#gallery" class="skip-link">Skip to Gallery</a>
 
+  <!-- Bang Motion Directional SVG Motion Blur Bank (techniques.md §2 & §10) -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none">
+    <defs>
+      <filter id="bm-blur-y" x="-70%" y="-70%" width="240%" height="240%">
+        <feGaussianBlur id="bm-blur-y-node" in="SourceGraphic" stdDeviation="0 0"></feGaussianBlur>
+      </filter>
+      <filter id="bm-blur-x" x="-70%" y="-70%" width="240%" height="240%">
+        <feGaussianBlur id="bm-blur-x-node" in="SourceGraphic" stdDeviation="0 0"></feGaussianBlur>
+      </filter>
+    </defs>
+  </svg>
+
   <div class="grain" aria-hidden="true"></div>
 
   <nav id="navbar" aria-label="Primary">
@@ -113,7 +125,11 @@
 
   <section id="hero">
 
-    <div class="hero-glow" aria-hidden="true"></div>
+    <div class="hero-glow" aria-hidden="true">
+      <i class="bm-blob bm-blob-1"></i>
+      <i class="bm-blob bm-blob-2"></i>
+      <i class="bm-light-sweep"></i>
+    </div>
 
     <div class="hero-inner">
       <div class="hero-content">
@@ -122,14 +138,14 @@
           <span class="hero-title-word clicks">CLICKS</span>
         </h1>
 
-        <p class="hero-tagline">“We take photos as a return ticket to a moment otherwise gone.”</p>
+        <p class="hero-tagline">“We take photos as a <span class="bm-hl under"><i></i><span class="bm-hl-t">return ticket</span></span> to a moment otherwise gone.”</p>
 
         <p class="hero-categories">
-          <span>Pre-Debut</span>
+          <span class="bm-cat-pill">Pre-Debut</span>
           <span class="cat-sep" aria-hidden="true">·</span>
-          <span>Events</span>
+          <span class="bm-cat-pill">Events</span>
           <span class="cat-sep" aria-hidden="true">·</span>
-          <span>Institutional</span>
+          <span class="bm-cat-pill">Institutional</span>
         </p>
 
         <div class="hero-cta-group">
@@ -228,7 +244,7 @@
         <h2 class="section-title">Andrei C. Capoy</h2>
         <p class="about-role">Photographer · EYSI CLICKS</p>
         <p class="about-bio">
-          Based in Cabuyao, Laguna, I photograph pre-debuts, celebrations, and institutional events in natural light, capturing unhurried moments you'll still love fifty years from now.
+          Based in Cabuyao, Laguna, I photograph pre-debuts, celebrations, and institutional events in natural light, capturing unhurried moments you'll still love <span class="bm-hl under"><i></i><span class="bm-hl-t">fifty years from now</span></span>.
         </p>
       </div>
 
