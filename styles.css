@@ -788,7 +788,7 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
 }
 
 .hero-tagline .bm-word {
-  animation: bmWordInUp 0.62s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--motion-delay-tagline) + var(--word-idx, 0) * 34ms) backwards;
+  animation: bmWordInUp 0.52s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--motion-delay-tagline) + var(--word-idx, 0) * 20ms) backwards;
 }
 
 /* Bang Motion Editorial Underline Highlight (.bm-hl.under — techniques.md §1) */
@@ -820,20 +820,20 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
 
 .hero-tagline .bm-hl.under i {
   transform: scaleX(1);
-  animation: bmHighlightDraw 0.55s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--motion-delay-tagline) + 180ms) both;
+  animation: bmHighlightDraw 0.52s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--motion-delay-tagline) + 120ms) both;
 }
 
 .hero-tagline .bm-hl-t {
-  animation: bmHighlightTextUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--motion-delay-tagline) + 110ms) both;
+  animation: bmHighlightTextUp 0.52s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--motion-delay-tagline) + 90ms) both;
 }
 
 .about-wrap.is-in-view .about-text .section-title .bm-char {
-  animation: bmCharInLeft 0.68s cubic-bezier(0.16, 1, 0.3, 1) calc(0.18s + var(--char-idx, 0) * 24ms) both;
+  animation: bmCharInLeft 0.64s cubic-bezier(0.16, 1, 0.3, 1) calc(0.16s + var(--char-idx, 0) * 22ms) both;
 }
 
 .about-wrap.is-in-view .about-bio .bm-hl.under i {
   transform: scaleX(1);
-  animation: bmHighlightDraw 0.72s cubic-bezier(0.22, 1, 0.36, 1) 0.56s both;
+  animation: bmHighlightDraw 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.36s both;
 }
 
 #gallery.is-in-view .section-title .bm-char {

@@ -236,8 +236,13 @@ class ViewTransitionCoordinator {
     const blurNode = document.getElementById(nodeId);
     if (!blurNode) return;
 
-    const prevRaf = this.#blurRafIds.get(axis);
-    if (prevRaf) cancelAnimationFrame(prevRaf);
+    const prev = this.#blurRafIds.get(axis);
+    if (prev) {
+      cancelAnimationFrame(prev.rafId);
+      if (prev.blurNode) prev.blurNode.setAttribute('stdDeviation', '0 0');
+      if (prev.targetEl && prev.targetEl.style) prev.targetEl.style.filter = '';
+      this.#blurRafIds.delete(axis);
+    }
 
     const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     targetEl.style.filter = `url(#${filterId})`;
@@ -252,7 +257,8 @@ class ViewTransitionCoordinator {
       blurNode.setAttribute('stdDeviation', axis === 'x' ? `${mainVal} ${crossVal}` : `${crossVal} ${mainVal}`);
 
       if (progress < 1) {
-        this.#blurRafIds.set(axis, requestAnimationFrame(step));
+        const rafId = requestAnimationFrame(step);
+        this.#blurRafIds.set(axis, { rafId, targetEl, blurNode });
       } else {
         blurNode.setAttribute('stdDeviation', '0 0');
         targetEl.style.filter = '';
@@ -260,7 +266,8 @@ class ViewTransitionCoordinator {
       }
     };
 
-    this.#blurRafIds.set(axis, requestAnimationFrame(step));
+    const initialRafId = requestAnimationFrame(step);
+    this.#blurRafIds.set(axis, { rafId: initialRafId, targetEl, blurNode });
   }
 
   run(mutationCallback, afterCallback = null) {
@@ -1050,6 +1057,7 @@ class GalleryPresenter {
       document.querySelectorAll('.cat-panel').forEach(panel => {
         panel.classList.remove('active');
         panel.removeAttribute('data-whip-dir');
+        if (panel.style) panel.style.filter = '';
       });
 
       const panel = document.getElementById('panel-' + cat);
@@ -1538,7 +1546,11 @@ class EditorialMotionController {
       this.#grainEl.style.setProperty('--grain-y', `${gy}px`);
     };
 
-    if (this.#heroSection && this.#heroDeck) {
+    const hasFinePointer = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(hover: hover) and (pointer: fine)').matches
+      : true;
+
+    if (this.#heroSection && this.#heroDeck && hasFinePointer) {
       this.#heroSection.addEventListener('mousemove', e => {
         if (!this.#heroDeck.style?.setProperty) return;
         const rect = this.#heroSection.getBoundingClientRect?.();
