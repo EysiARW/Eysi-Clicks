@@ -1078,7 +1078,6 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   align-items: center;
   gap: 1.25rem;
   width: 100%;
-  perspective: 1400px;
 }
 
 .hero-deck {
@@ -1090,9 +1089,6 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   align-items: center;
   justify-content: center;
   margin: 0 auto;
-  transform-style: preserve-3d;
-  transform: rotateX(var(--cam-rx, 0deg)) rotateY(var(--cam-ry, 0deg)) scale(var(--cam-s, 1));
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .hero-card {
@@ -1106,19 +1102,19 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
-  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease, z-index 0s;
-  will-change: transform;
 }
 
-/* Card Fanning (playing card deck layout: generous spread so all 3 photos are clearly visible) */
+/* Card Fanning (playing card deck layout: generous spread so all 3 photos are clearly visible).
+   The outer <figure class="hero-card"> stays anchored at its resting coordinates so the hit-test
+   boundary never moves out from under the pointer on hover; the inner .hero-monument-mat performs
+   the GPU-composited hover lift. */
 .hero-card-left {
   z-index: 1;
   --card-rest-x: -130px;
   --card-rest-y: 12px;
   --card-rest-rot: -8deg;
-  --card-hover-y: -14px;
-  --card-hover-rot: -5deg;
-  transform: translate(var(--card-rest-x), var(--card-rest-y)) rotate(var(--card-rest-rot));
+  --card-hover-lift: -18px;
+  transform: translate3d(var(--card-rest-x), var(--card-rest-y), 0) rotate(var(--card-rest-rot));
   animation: deckFanLeft 0.75s var(--motion-ease-spring) var(--motion-delay-deck) backwards;
 }
 
@@ -1127,9 +1123,8 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   --card-rest-x: 0px;
   --card-rest-y: 0px;
   --card-rest-rot: -1deg;
-  --card-hover-y: -18px;
-  --card-hover-rot: 0deg;
-  transform: translate(var(--card-rest-x), var(--card-rest-y)) rotate(var(--card-rest-rot));
+  --card-hover-lift: -18px;
+  transform: translate3d(var(--card-rest-x), var(--card-rest-y), 0) rotate(var(--card-rest-rot));
   animation: deckFanCenter 0.75s var(--motion-ease-spring) calc(var(--motion-delay-deck) + 80ms) backwards;
 }
 
@@ -1138,42 +1133,36 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   --card-rest-x: 130px;
   --card-rest-y: 14px;
   --card-rest-rot: 8deg;
-  --card-hover-y: -14px;
-  --card-hover-rot: 5deg;
-  transform: translate(var(--card-rest-x), var(--card-rest-y)) rotate(var(--card-rest-rot));
+  --card-hover-lift: -18px;
+  transform: translate3d(var(--card-rest-x), var(--card-rest-y), 0) rotate(var(--card-rest-rot));
   animation: deckFanRight 0.75s var(--motion-ease-spring) calc(var(--motion-delay-deck) + 160ms) backwards;
 }
 
-/* Stable Hover & Focus: lifts in-place along card's own axis without jumping horizontally */
+/* Stable Hover & Focus: outer figure keeps its stationary hit-box while inner mat lifts smoothly */
 .hero-card:hover,
 .hero-card:focus-visible {
-  z-index: 10 !important;
+  z-index: 10;
   outline: none;
 }
 
-.hero-card-left:hover,
-.hero-card-left:focus-visible {
-  transform: translate(var(--card-rest-x), var(--card-hover-y)) rotate(var(--card-hover-rot)) scale(1.04);
+.hero-card .hero-monument-mat {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translate3d(0, 0, 0) scale(1);
+  transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.36s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.25s ease;
 }
 
-.hero-card-center:hover,
-.hero-card-center:focus-visible {
-  transform: translate(var(--card-rest-x), var(--card-hover-y)) rotate(var(--card-hover-rot)) scale(1.04);
-}
-
-.hero-card-right:hover,
-.hero-card-right:focus-visible {
-  transform: translate(var(--card-rest-x), var(--card-hover-y)) rotate(var(--card-hover-rot)) scale(1.04);
+.hero-card:hover .hero-monument-mat,
+.hero-card:focus-visible .hero-monument-mat {
+  transform: translate3d(0, var(--card-hover-lift, -18px), 0) scale(1.035);
+  border-color: var(--border-strong);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
 }
 
 .hero-card:focus-visible .hero-monument-mat {
   outline: 2px solid var(--accent-bronze);
   outline-offset: 4px;
-}
-
-.hero-card:hover .hero-monument-mat {
-  border-color: var(--border-strong);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
 }
 
 /* Tablet adjustments (600px - 959px) */
@@ -1190,22 +1179,19 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
     --card-rest-x: -105px;
     --card-rest-y: 10px;
     --card-rest-rot: -7deg;
-    --card-hover-y: -12px;
-    --card-hover-rot: -4deg;
+    --card-hover-lift: -14px;
   }
   .hero-card-center {
     --card-rest-x: 0px;
     --card-rest-y: 0px;
     --card-rest-rot: -1deg;
-    --card-hover-y: -16px;
-    --card-hover-rot: 0deg;
+    --card-hover-lift: -16px;
   }
   .hero-card-right {
     --card-rest-x: 105px;
     --card-rest-y: 12px;
     --card-rest-rot: 7deg;
-    --card-hover-y: -12px;
-    --card-hover-rot: 4deg;
+    --card-hover-lift: -14px;
   }
 }
 
@@ -1230,22 +1216,19 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
     --card-rest-x: -72px;
     --card-rest-y: 8px;
     --card-rest-rot: -5.5deg;
-    --card-hover-y: -10px;
-    --card-hover-rot: -3deg;
+    --card-hover-lift: -10px;
   }
   .hero-card-center {
     --card-rest-x: 0px;
     --card-rest-y: 0px;
     --card-rest-rot: -1deg;
-    --card-hover-y: -12px;
-    --card-hover-rot: 0deg;
+    --card-hover-lift: -12px;
   }
   .hero-card-right {
     --card-rest-x: 72px;
     --card-rest-y: 10px;
     --card-rest-rot: 5.5deg;
-    --card-hover-y: -10px;
-    --card-hover-rot: 3deg;
+    --card-hover-lift: -10px;
   }
 }
 
@@ -1253,17 +1236,14 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   .hero-card,
   .hero-card-left,
   .hero-card-center,
-  .hero-card-right {
+  .hero-card-right,
+  .hero-card .hero-monument-mat {
     animation: none !important;
     transition: none !important;
   }
-  .hero-card-left:hover,
-  .hero-card-left:focus-visible,
-  .hero-card-center:hover,
-  .hero-card-center:focus-visible,
-  .hero-card-right:hover,
-  .hero-card-right:focus-visible {
-    transform: translate(var(--card-rest-x), var(--card-rest-y)) rotate(var(--card-rest-rot)) !important;
+  .hero-card:hover .hero-monument-mat,
+  .hero-card:focus-visible .hero-monument-mat {
+    transform: none !important;
   }
 }
 
@@ -1310,7 +1290,7 @@ html.hero-settled .hero-tagline .bm-hl.under i {
   transition: transform 0.5s var(--shutter-ease), box-shadow 0.5s var(--shutter-ease), border-color 0.3s ease;
 }
 
-.hero-monument:hover .hero-monument-mat {
+.hero-monument:not(.hero-card):hover .hero-monument-mat {
   transform: translateY(-3px);
   border-color: var(--border-strong);
   box-shadow: var(--shadow-elevated);
@@ -1328,18 +1308,6 @@ html[data-theme="dark"] .hero-monument-mat picture {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-@keyframes heroKenBurns {
-  0% {
-    transform: scale(1.0);
-  }
-  50% {
-    transform: scale(1.028);
-  }
-  100% {
-    transform: scale(1.0);
-  }
-}
-
 .hero-monument-mat img {
   display: block;
   width: 100%;
@@ -1348,19 +1316,7 @@ html[data-theme="dark"] .hero-monument-mat picture {
   max-height: min(65vh, 460px);
   object-fit: cover;
   object-position: center 20%;
-  transition: transform 0.65s var(--shutter-ease), filter 0.4s ease;
   filter: brightness(0.98) contrast(1.02);
-}
-
-@media (min-width: 960px) {
-  .hero-monument-mat img {
-    animation: heroKenBurns 14s ease-in-out 1.4s infinite alternate;
-  }
-  .hero-card:hover .hero-monument-mat img,
-  .hero-monument:hover .hero-monument-mat img {
-    animation-play-state: paused;
-    transform: scale(1.035);
-  }
 }
 
 .hero-monument-caption {

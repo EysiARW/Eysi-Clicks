@@ -1550,26 +1550,9 @@ class EditorialMotionController {
       ? window.matchMedia('(hover: hover) and (pointer: fine)').matches
       : true;
 
-    if (this.#heroSection && this.#heroDeck && hasFinePointer) {
+    if (this.#heroSection && hasFinePointer) {
       this.#heroSection.addEventListener('mousemove', e => {
-        if (!this.#heroDeck.style?.setProperty) return;
-        const rect = this.#heroSection.getBoundingClientRect?.();
-        if (!rect || !rect.width || !rect.height) return;
-        const nx = ((e.clientX - rect.left) / rect.width) - 0.5;
-        const ny = ((e.clientY - rect.top) / rect.height) - 0.5;
-        const rx = (-ny * 4.5).toFixed(2);
-        const ry = (nx * 6.0).toFixed(2);
-        this.#heroDeck.style.setProperty('--cam-rx', `${rx}deg`);
-        this.#heroDeck.style.setProperty('--cam-ry', `${ry}deg`);
-        this.#heroDeck.style.setProperty('--cam-s', '1.012');
         stepDeterministicGrain((e.clientX + e.clientY) * 0.015);
-      }, { passive: true });
-
-      this.#heroSection.addEventListener('mouseleave', () => {
-        if (!this.#heroDeck.style?.setProperty) return;
-        this.#heroDeck.style.setProperty('--cam-rx', '0deg');
-        this.#heroDeck.style.setProperty('--cam-ry', '0deg');
-        this.#heroDeck.style.setProperty('--cam-s', '1');
       }, { passive: true });
     }
 
