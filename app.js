@@ -219,6 +219,7 @@ class PortfolioRepository {
 
 class ViewTransitionCoordinator {
   #reducedMotionQuery;
+  #blurRafIds = new Map();
 
   constructor() {
     this.#reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -226,6 +227,47 @@ class ViewTransitionCoordinator {
 
   get prefersReducedMotion() {
     return this.#reducedMotionQuery.matches;
+  }
+
+  pulseDirectionalBlur(targetEl, axis = 'y', peak = 18, durationMs = 420) {
+    if (!targetEl || this.prefersReducedMotion || typeof requestAnimationFrame !== 'function') return;
+    const filterId = axis === 'x' ? 'bm-blur-x' : 'bm-blur-y';
+    const nodeId   = axis === 'x' ? 'bm-blur-x-node' : 'bm-blur-y-node';
+    const blurNode = document.getElementById(nodeId);
+    if (!blurNode) return;
+
+    const prev = this.#blurRafIds.get(axis);
+    if (prev) {
+      cancelAnimationFrame(prev.rafId);
+      if (prev.blurNode) prev.blurNode.setAttribute('stdDeviation', '0 0');
+      if (prev.targetEl && prev.targetEl.style) prev.targetEl.style.filter = '';
+      this.#blurRafIds.delete(axis);
+    }
+
+    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    targetEl.style.filter = `url(#${filterId})`;
+
+    const step = (now) => {
+      const current = typeof now === 'number' ? now : Date.now();
+      const progress = Math.min(1, Math.max(0, (current - startTime) / durationMs));
+      // Power4-like ease-out decay from peak -> 0 (Bang Motion techniques.md §2)
+      const eased = Math.pow(1 - progress, 3);
+      const mainVal = (peak * eased).toFixed(2);
+      const crossVal = (peak * eased * 0.08).toFixed(2);
+      blurNode.setAttribute('stdDeviation', axis === 'x' ? `${mainVal} ${crossVal}` : `${crossVal} ${mainVal}`);
+
+      if (progress < 1) {
+        const rafId = requestAnimationFrame(step);
+        this.#blurRafIds.set(axis, { rafId, targetEl, blurNode });
+      } else {
+        blurNode.setAttribute('stdDeviation', '0 0');
+        targetEl.style.filter = '';
+        this.#blurRafIds.delete(axis);
+      }
+    };
+
+    const initialRafId = requestAnimationFrame(step);
+    this.#blurRafIds.set(axis, { rafId: initialRafId, targetEl, blurNode });
   }
 
   run(mutationCallback, afterCallback = null) {
@@ -512,9 +554,11 @@ class LightboxController {
     }
     this.#currentIndex = (this.#currentIndex + dir + this.#images.length) % this.#images.length;
     if (this.#imgEl && !this.#transitionCoordinator.prefersReducedMotion) {
+      this.#imgEl.setAttribute('data-nav-dir', dir >= 0 ? 'next' : 'prev');
       this.#imgEl.classList.remove('frame-crossfade');
       void this.#imgEl.offsetWidth;
       this.#imgEl.classList.add('frame-crossfade');
+      this.#transitionCoordinator.pulseDirectionalBlur(this.#imgEl, 'x', 14, 300);
     }
     this.#updateView();
   }
@@ -997,6 +1041,10 @@ class GalleryPresenter {
 
   switchTab(cat, animate = true, updateHistory = true) {
     if (!this.#repository.isValidCategory(cat)) return;
+    const categories = this.#repository.getCategories();
+    const prevIdx = categories.indexOf(this.activeCategory);
+    const nextIdx = categories.indexOf(cat);
+    const whipDir = nextIdx >= prevIdx ? '1' : '-1';
 
     const performSwitch = () => {
       document.querySelectorAll('.cat-tab').forEach(tab => {
@@ -1008,12 +1056,23 @@ class GalleryPresenter {
 
       document.querySelectorAll('.cat-panel').forEach(panel => {
         panel.classList.remove('active');
+        panel.removeAttribute('data-whip-dir');
+        if (panel.style) panel.style.filter = '';
       });
 
       const panel = document.getElementById('panel-' + cat);
-      if (panel) panel.classList.add('active');
+      if (panel) {
+        if (animate && prevIdx !== nextIdx) {
+          panel.setAttribute('data-whip-dir', whipDir);
+        }
+        panel.classList.add('active');
+      }
 
       this.#ensureRendered(cat);
+
+      if (animate && panel && prevIdx !== nextIdx) {
+        this.#transitionCoordinator.pulseDirectionalBlur(panel, 'x', 16, 360);
+      }
 
       if (window.location && typeof history !== 'undefined') {
         const url = new URL(window.location.href);
@@ -1350,30 +1409,187 @@ class TelemetryHudController {
 /* ── 8. EDITORIAL MONOGRAPH MOTION CONTROLLER ── */
 
 class EditorialMotionController {
+  #heroSection;
+  #heroDeck;
+  #grainEl;
   #aboutSection;
   #aboutWrap;
+  #gallerySection;
   #footerSection;
   #transitionCoordinator;
 
   constructor(transitionCoordinator) {
     this.#transitionCoordinator = transitionCoordinator;
+    this.#heroSection    = document.getElementById('hero');
+    this.#heroDeck       = document.querySelector('.hero-deck');
+    this.#grainEl        = document.querySelector('.grain');
     this.#aboutSection   = document.getElementById('about');
     this.#aboutWrap      = document.querySelector('.about-wrap');
+    this.#gallerySection = document.getElementById('gallery');
     this.#footerSection  = document.getElementById('footer');
 
+    this.#initKineticTypography();
     this.#initScrollObservers();
+    this.#initCameraRigAndGrain();
     this.#initEntranceCleanup();
+  }
+
+  #initKineticTypography() {
+    if (this.#transitionCoordinator?.prefersReducedMotion) return;
+
+    let heroCharIdx = 0;
+    document.querySelectorAll('.hero-title-word').forEach(wordEl => {
+      heroCharIdx = this.#splitCharacters(wordEl, heroCharIdx);
+    });
+
+    const heroTitle = document.querySelector('.hero-title');
+    if (heroTitle) {
+      this.#transitionCoordinator?.pulseDirectionalBlur(heroTitle, 'y', 22, 680);
+    }
+
+    const taglineEl = document.querySelector('.hero-tagline');
+    if (taglineEl) {
+      this.#splitWordsPreservingHighlights(taglineEl);
+    }
+
+    const aboutTitle = document.querySelector('#about .section-title');
+    if (aboutTitle) {
+      this.#splitCharacters(aboutTitle, 0);
+    }
+
+    const galleryTitle = document.querySelector('#gallery .section-title');
+    if (galleryTitle) {
+      this.#splitCharacters(galleryTitle, 0);
+    }
+  }
+
+  #splitCharacters(el, startIdx = 0) {
+    const rawText = el.textContent || '';
+    if (!rawText.trim()) return startIdx;
+
+    if (!el.hasAttribute('aria-label')) {
+      el.setAttribute('aria-label', rawText.trim());
+    }
+    el.innerHTML = '';
+
+    let charIdx = startIdx;
+    const tokens = rawText.split(/(\s+)/);
+    tokens.forEach(token => {
+      if (!token) return;
+      if (/^\s+$/.test(token)) {
+        const spaceSpan = document.createElement('span');
+        spaceSpan.className = 'bm-space';
+        spaceSpan.setAttribute('aria-hidden', 'true');
+        spaceSpan.textContent = token;
+        el.appendChild(spaceSpan);
+        return;
+      }
+      const wordWrap = document.createElement('span');
+      wordWrap.className = 'bm-char-wrap';
+      wordWrap.setAttribute('aria-hidden', 'true');
+
+      for (const ch of token) {
+        const span = document.createElement('span');
+        span.className = 'bm-char';
+        span.setAttribute('style', `--char-idx:${charIdx}`);
+        span.setAttribute('aria-hidden', 'true');
+        span.textContent = ch;
+        wordWrap.appendChild(span);
+        charIdx++;
+      }
+      el.appendChild(wordWrap);
+    });
+
+    return charIdx;
+  }
+
+  #splitWordsPreservingHighlights(container) {
+    const originalNodes = [...container.childNodes];
+    container.innerHTML = '';
+    let wordIdx = 0;
+
+    originalNodes.forEach(node => {
+      if (node.nodeType === 3) {
+        const parts = (node.textContent || '').split(/(\s+)/);
+        parts.forEach(part => {
+          if (!part) return;
+          if (/^\s+$/.test(part)) {
+            const spaceSpan = document.createElement('span');
+            spaceSpan.className = 'bm-space';
+            spaceSpan.textContent = part;
+            container.appendChild(spaceSpan);
+          } else {
+            const span = document.createElement('span');
+            span.className = 'bm-word';
+            span.setAttribute('style', `--word-idx:${wordIdx++}`);
+            span.textContent = part;
+            container.appendChild(span);
+          }
+        });
+      } else {
+        container.appendChild(node);
+        wordIdx += 2;
+      }
+    });
+  }
+
+  #initCameraRigAndGrain() {
+    if (this.#transitionCoordinator?.prefersReducedMotion) return;
+
+    const stepDeterministicGrain = (seedTimeSec) => {
+      if (!this.#grainEl || !this.#grainEl.style?.setProperty) return;
+      // Bang Motion deterministic 12fps film-grain step formula (techniques.md §7d)
+      const k = Math.floor(seedTimeSec * 12);
+      const gx = ((k * 37) % 60) - 30;
+      const gy = ((k * 61) % 60) - 30;
+      this.#grainEl.style.setProperty('--grain-x', `${gx}px`);
+      this.#grainEl.style.setProperty('--grain-y', `${gy}px`);
+    };
+
+    const hasFinePointer = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(hover: hover) and (pointer: fine)').matches
+      : true;
+
+    if (this.#heroSection && this.#heroDeck && hasFinePointer) {
+      this.#heroSection.addEventListener('mousemove', e => {
+        if (!this.#heroDeck.style?.setProperty) return;
+        const rect = this.#heroSection.getBoundingClientRect?.();
+        if (!rect || !rect.width || !rect.height) return;
+        const nx = ((e.clientX - rect.left) / rect.width) - 0.5;
+        const ny = ((e.clientY - rect.top) / rect.height) - 0.5;
+        const rx = (-ny * 4.5).toFixed(2);
+        const ry = (nx * 6.0).toFixed(2);
+        this.#heroDeck.style.setProperty('--cam-rx', `${rx}deg`);
+        this.#heroDeck.style.setProperty('--cam-ry', `${ry}deg`);
+        this.#heroDeck.style.setProperty('--cam-s', '1.012');
+        stepDeterministicGrain((e.clientX + e.clientY) * 0.015);
+      }, { passive: true });
+
+      this.#heroSection.addEventListener('mouseleave', () => {
+        if (!this.#heroDeck.style?.setProperty) return;
+        this.#heroDeck.style.setProperty('--cam-rx', '0deg');
+        this.#heroDeck.style.setProperty('--cam-ry', '0deg');
+        this.#heroDeck.style.setProperty('--cam-s', '1');
+      }, { passive: true });
+    }
+
+    window.addEventListener('scroll', () => {
+      const sy = window.scrollY || 0;
+      stepDeterministicGrain(sy * 0.02);
+    }, { passive: true });
   }
 
   #initScrollObservers() {
     if (this.#transitionCoordinator?.prefersReducedMotion) {
       if (this.#aboutWrap) this.#aboutWrap.classList.add('is-in-view');
+      if (this.#gallerySection) this.#gallerySection.classList.add('is-in-view');
       if (this.#footerSection) this.#footerSection.classList.add('is-in-view');
       return;
     }
 
     if (typeof IntersectionObserver === 'undefined') {
       if (this.#aboutWrap) this.#aboutWrap.classList.add('is-in-view');
+      if (this.#gallerySection) this.#gallerySection.classList.add('is-in-view');
       if (this.#footerSection) this.#footerSection.classList.add('is-in-view');
       return;
     }
@@ -1383,6 +1599,12 @@ class EditorialMotionController {
         if (entry.isIntersecting) {
           if (entry.target === this.#aboutSection) {
             if (this.#aboutWrap) this.#aboutWrap.classList.add('is-in-view');
+            const aboutTitle = this.#aboutSection.querySelector('.section-title');
+            if (aboutTitle) this.#transitionCoordinator?.pulseDirectionalBlur(aboutTitle, 'x', 18, 520);
+          } else if (entry.target === this.#gallerySection) {
+            entry.target.classList.add('is-in-view');
+            const galTitle = this.#gallerySection.querySelector('.section-title');
+            if (galTitle) this.#transitionCoordinator?.pulseDirectionalBlur(galTitle, 'y', 16, 480);
           } else if (entry.target === this.#footerSection) {
             entry.target.classList.add('is-in-view');
           }
@@ -1395,6 +1617,7 @@ class EditorialMotionController {
     });
 
     if (this.#aboutSection) revealObserver.observe(this.#aboutSection);
+    if (this.#gallerySection) revealObserver.observe(this.#gallerySection);
     if (this.#footerSection) revealObserver.observe(this.#footerSection);
   }
 
@@ -1413,9 +1636,12 @@ class EditorialMotionController {
 
     const cards = document.querySelectorAll('.hero-card');
     let endedCount = 0;
+    const supportsAnimationProp = typeof AnimationEvent !== 'undefined' && 'animation' in AnimationEvent.prototype;
+
     cards.forEach(card => {
       card.addEventListener('animationend', (e) => {
-        if (e.target === card) {
+        const animTarget = supportsAnimationProp && e.animation?.effect?.target ? e.animation.effect.target : e.target;
+        if (animTarget === card || e.target === card) {
           card.style.willChange = 'auto';
           endedCount++;
           if (endedCount >= cards.length) {
