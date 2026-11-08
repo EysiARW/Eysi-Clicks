@@ -418,6 +418,7 @@ const LightboxState = Object.freeze({
 class LightboxController {
   #lightboxEl;
   #imgEl;
+  #sourceWebpEl;
   #titleEl;
   #counterEl;
   #catBadgeEl;
@@ -435,6 +436,7 @@ class LightboxController {
   #isZoomed = false;
   #panX = 0;
   #panY = 0;
+  #panBounds = { maxX: 180, maxY: 180 };
   #isPanning = false;
   #dragStartX = 0;
   #dragStartY = 0;
@@ -444,12 +446,14 @@ class LightboxController {
   #slideshowInterval = null;
   #lastFocusedElement = null;
   #activeSourceFigure = null;
+  #preloadCache = new Map();
 
   constructor(transitionCoordinator, cursorLoupe) {
     this.#transitionCoordinator = transitionCoordinator;
     this.#cursorLoupe    = cursorLoupe;
     this.#lightboxEl     = document.getElementById('lightbox');
     this.#imgEl          = document.getElementById('lightbox-img');
+    this.#sourceWebpEl   = document.getElementById('lightbox-source-webp');
     this.#titleEl        = document.getElementById('lightbox-title');
     this.#counterEl      = document.getElementById('lightbox-counter');
     this.#catBadgeEl     = document.getElementById('lightbox-cat-badge');
@@ -460,6 +464,19 @@ class LightboxController {
     this.#zoomBtn        = document.getElementById('lb-zoom-btn');
 
     this.#bindEvents();
+  }
+
+  preload(asset) {
+    if (!asset) return;
+    const url = asset.webpSrc || asset.src;
+    if (!url || this.#preloadCache.has(url)) return;
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = url;
+    if (typeof img.decode === 'function') {
+      img.decode().catch(() => {});
+    }
+    this.#preloadCache.set(url, img);
   }
 
   get state() {
@@ -485,23 +502,15 @@ class LightboxController {
     this.#clearSourceTransitionClass();
     if (sourceFigure) {
       this.#activeSourceFigure = sourceFigure;
-      sourceFigure.classList.add('vt-source');
     }
 
     this.#renderFilmstrip();
     this.#updateView();
 
-    this.#transitionCoordinator.run(
-      () => {
-        if (sourceFigure) sourceFigure.classList.remove('vt-source');
-        this.#lightboxEl.classList.add('open');
-        document.body.style.overflow = 'hidden';
-      },
-      () => {
-        const closeBtn = this.#lightboxEl.querySelector('.lightbox-close');
-        if (closeBtn) closeBtn.focus();
-      }
-    );
+    this.#lightboxEl.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    const closeBtn = this.#lightboxEl.querySelector('.lightbox-close');
+    if (closeBtn) closeBtn.focus();
   }
 
   close() {
@@ -522,21 +531,12 @@ class LightboxController {
     }
 
     const restoreTarget = this.#lastFocusedElement;
-    const sourceFigure = this.#activeSourceFigure;
-
-    this.#transitionCoordinator.run(
-      () => {
-        this.#lightboxEl.classList.remove('open');
-        document.body.style.overflow = '';
-        if (sourceFigure) sourceFigure.classList.add('vt-source');
-      },
-      () => {
-        this.#clearSourceTransitionClass();
-        if (restoreTarget && typeof restoreTarget.focus === 'function') {
-          restoreTarget.focus();
-        }
-      }
-    );
+    this.#lightboxEl.classList.remove('open');
+    document.body.style.overflow = '';
+    this.#clearSourceTransitionClass();
+    if (restoreTarget && typeof restoreTarget.focus === 'function') {
+      restoreTarget.focus();
+    }
   }
 
   navigate(dir) {
@@ -553,14 +553,17 @@ class LightboxController {
       }
     }
     this.#currentIndex = (this.#currentIndex + dir + this.#images.length) % this.#images.length;
+    this.#triggerFrameCrossfade(dir >= 0 ? 'next' : 'prev');
+    this.#updateView();
+  }
+
+  #triggerFrameCrossfade(navDir = 'next') {
     if (this.#imgEl && !this.#transitionCoordinator.prefersReducedMotion) {
-      this.#imgEl.setAttribute('data-nav-dir', dir >= 0 ? 'next' : 'prev');
+      this.#imgEl.setAttribute('data-nav-dir', navDir);
       this.#imgEl.classList.remove('frame-crossfade');
       void this.#imgEl.offsetWidth;
       this.#imgEl.classList.add('frame-crossfade');
-      this.#transitionCoordinator.pulseDirectionalBlur(this.#imgEl, 'x', 14, 300);
     }
-    this.#updateView();
   }
 
   toggleZoom() {
@@ -569,6 +572,7 @@ class LightboxController {
       this.stopSlideshow();
       this.#isZoomed = true;
       this.#state = LightboxState.ZOOMED;
+      this.#panBounds = this.#measurePanBounds();
       this.#imgEl.classList.add('zoomed');
       if (this.#zoomBtn) {
         this.#zoomBtn.setAttribute('aria-pressed', 'true');
@@ -579,6 +583,7 @@ class LightboxController {
     } else {
       this.#isZoomed = true;
       this.#state = LightboxState.ZOOMED;
+      this.#panBounds = this.#measurePanBounds();
       this.#imgEl.classList.add('zoomed');
       if (this.#zoomBtn) {
         this.#zoomBtn.setAttribute('aria-pressed', 'true');
@@ -637,7 +642,7 @@ class LightboxController {
     if (this.#zoomBtn) this.#zoomBtn.setAttribute('aria-pressed', 'false');
   }
 
-  #getPanBounds() {
+  #measurePanBounds() {
     const scale = 1.85;
     const w = this.#imgEl?.clientWidth || 0;
     const h = this.#imgEl?.clientHeight || 0;
@@ -645,6 +650,10 @@ class LightboxController {
       maxX: w > 0 ? (w * (scale - 1)) / 2 : 180,
       maxY: h > 0 ? (h * (scale - 1)) / 2 : 180,
     };
+  }
+
+  #getPanBounds() {
+    return this.#panBounds;
   }
 
   #clearSourceTransitionClass() {
@@ -656,6 +665,9 @@ class LightboxController {
     if (!this.#images.length) return;
     const current = this.#images[this.#currentIndex];
 
+    if (this.#sourceWebpEl) {
+      this.#sourceWebpEl.srcset = current.webpSrc || current.src.replace(/\.jpe?g$/i, '.webp');
+    }
     if (this.#imgEl) {
       this.#imgEl.src = current.src;
       const catLabel = current.categoryLabel || 'PORTFOLIO';
@@ -692,12 +704,14 @@ class LightboxController {
 
     this.#syncFilmstripActive();
 
-    // Preload adjacent frames for zero-latency browsing
-    if (this.#images.length > 1) {
-      const nextIdx = (this.#currentIndex + 1) % this.#images.length;
-      const prevIdx = (this.#currentIndex - 1 + this.#images.length) % this.#images.length;
-      new Image().src = this.#images[nextIdx].src;
-      new Image().src = this.#images[prevIdx].src;
+    // Preload and asynchronously decode ±2 adjacent frames for zero-latency browsing
+    const len = this.#images.length;
+    if (len > 1) {
+      const offsets = len > 3 ? [1, -1, 2, -2] : [1, -1];
+      offsets.forEach(offset => {
+        const idx = (this.#currentIndex + offset + len) % len;
+        this.preload(this.#images[idx]);
+      });
     }
   }
 
@@ -722,11 +736,14 @@ class LightboxController {
       img.onerror = () => { img.src = image.src; };
 
       thumb.appendChild(img);
+      thumb.addEventListener('mouseenter', () => this.preload(image), { passive: true });
       thumb.addEventListener('click', e => {
         e.stopPropagation();
         if (this.#currentIndex !== idx) {
+          const dir = idx > this.#currentIndex ? 'next' : 'prev';
           this.#resetZoom();
           this.#currentIndex = idx;
+          this.#triggerFrameCrossfade(dir);
           this.#updateView();
         }
       });
@@ -1070,10 +1087,6 @@ class GalleryPresenter {
 
       this.#ensureRendered(cat);
 
-      if (animate && panel && prevIdx !== nextIdx) {
-        this.#transitionCoordinator.pulseDirectionalBlur(panel, 'x', 16, 360);
-      }
-
       if (window.location && typeof history !== 'undefined') {
         const url = new URL(window.location.href);
         const currentParam = url.searchParams.get('tab');
@@ -1088,11 +1101,7 @@ class GalleryPresenter {
       }
     };
 
-    if (animate) {
-      this.#transitionCoordinator.run(performSwitch);
-    } else {
-      performSwitch();
-    }
+    performSwitch();
   }
 
   renderCategory(cat) {
@@ -1141,7 +1150,7 @@ class GalleryPresenter {
     photos.forEach((asset, idx) => {
       const figure = document.createElement('figure');
       figure.className = 'photo-item';
-      figure.style.transitionDelay = `${Math.min(idx * 45, 280)}ms`;
+      figure.style.setProperty?.('--reveal-delay', `${Math.min(idx * 35, 210)}ms`);
 
       if (!this.#revealObserver || this.#transitionCoordinator.prefersReducedMotion) {
         figure.classList.add('is-revealed');
@@ -1187,6 +1196,7 @@ class GalleryPresenter {
 
       this.#cursorLoupe?.attachInteractiveTarget(figure, 'INSPECT');
 
+      figure.addEventListener('mouseenter', () => this.#lightbox.preload(asset), { passive: true });
       const activate = () => this.#lightbox.open(photos, idx, figure);
       figure.addEventListener('click', activate);
       figure.tabIndex = 0;
@@ -1534,32 +1544,7 @@ class EditorialMotionController {
   }
 
   #initCameraRigAndGrain() {
-    if (this.#transitionCoordinator?.prefersReducedMotion) return;
-
-    const stepDeterministicGrain = (seedTimeSec) => {
-      if (!this.#grainEl || !this.#grainEl.style?.setProperty) return;
-      // Bang Motion deterministic 12fps film-grain step formula (techniques.md §7d)
-      const k = Math.floor(seedTimeSec * 12);
-      const gx = ((k * 37) % 60) - 30;
-      const gy = ((k * 61) % 60) - 30;
-      this.#grainEl.style.setProperty('--grain-x', `${gx}px`);
-      this.#grainEl.style.setProperty('--grain-y', `${gy}px`);
-    };
-
-    const hasFinePointer = typeof window.matchMedia === 'function'
-      ? window.matchMedia('(hover: hover) and (pointer: fine)').matches
-      : true;
-
-    if (this.#heroSection && hasFinePointer) {
-      this.#heroSection.addEventListener('mousemove', e => {
-        stepDeterministicGrain((e.clientX + e.clientY) * 0.015);
-      }, { passive: true });
-    }
-
-    window.addEventListener('scroll', () => {
-      const sy = window.scrollY || 0;
-      stepDeterministicGrain(sy * 0.02);
-    }, { passive: true });
+    // Static archival grain with CSS strict containment requires zero scroll/mousemove style mutations
   }
 
   #initScrollObservers() {
