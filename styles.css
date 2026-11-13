@@ -97,7 +97,6 @@ html[data-theme="light"] {
   --radius-mat:       10px;
   --radius-photo:     4px;
   --radius-stage:     16px;
-  --font-mono:        ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
 
   /* Disciplined 2-Family Editorial Typographic System */
   --font-garamond:      'EB Garamond', Georgia, serif;
@@ -895,6 +894,7 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
 }
 
 .hero-tagline {
+  text-wrap: balance;
   font-family: var(--font-garamond);
   font-style: italic;
   font-weight: 400;
@@ -1581,7 +1581,6 @@ html[data-theme="dark"] .about-img-inner {
   width: 100%;
 }
 
-.about-text .section-eyebrow,
 .about-text .section-title,
 .about-role,
 .about-bio,
@@ -1592,12 +1591,6 @@ html[data-theme="dark"] .about-img-inner {
   opacity: 0;
   transform: translateY(16px);
   transition: opacity 0.75s var(--motion-ease-cinematic), transform 0.75s var(--motion-ease-cinematic);
-}
-
-.about-wrap.is-in-view .about-text .section-eyebrow {
-  opacity: 1;
-  transform: translateY(0);
-  transition-delay: 0.10s;
 }
 
 .about-wrap.is-in-view .about-text .section-title {
@@ -1642,7 +1635,6 @@ html[data-theme="dark"] .about-img-inner {
   transition-delay: 0.70s;
 }
 
-.about-text .section-eyebrow,
 .about-text .section-title {
   text-align: center;
 }
@@ -1663,6 +1655,7 @@ html[data-theme="dark"] .about-img-inner {
 }
 
 .about-bio {
+  text-wrap: pretty;
   font-family: var(--font-garamond);
   font-size: clamp(1.1rem, 1.8vw, 1.3rem);
   line-height: 1.7;
@@ -1836,7 +1829,6 @@ html[data-theme="dark"] .about-img-inner {
     margin-inline: 0;
     margin-left: auto;
   }
-  .about-text .section-eyebrow,
   .about-text .section-title,
   .about-role,
   .about-bio {
@@ -1872,40 +1864,8 @@ html[data-theme="dark"] .about-img-inner {
   letter-spacing: 0.02em;
 }
 
-.section-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6em;
-  font-family: var(--font-mono);
-  font-size: var(--fs-eyebrow);
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--text);
-  font-weight: 600;
-  margin-bottom: 0.75rem;
-}
-
-.eyebrow-index {
-  font-family: var(--font-garamond);
-  font-style: italic;
-  font-size: 0.85rem;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--accent-bronze);
-}
-
-.eyebrow-index::after {
-  content: '';
-  display: inline-block;
-  width: 18px;
-  height: 1px;
-  margin-left: 0.6em;
-  background: currentColor;
-  opacity: 0.65;
-  vertical-align: middle;
-}
-
 .section-title {
+  text-wrap: balance;
   font-family: var(--font-garamond);
   font-size: var(--fs-h2);
   font-weight: 600;
@@ -1986,11 +1946,11 @@ html[data-theme="dark"] .about-img-inner {
 }
 
 .cat-tab-count {
-  font-family: var(--font-garamond);
-  font-style: italic;
-  font-size: 0.82rem;
-  font-weight: 400;
-  letter-spacing: 0.01em;
+  font-family: var(--font-interphases);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
   padding: 0;
   border-radius: 0;
   background: transparent;
@@ -2167,6 +2127,7 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
 }
 
 .story-title {
+  text-wrap: balance;
   font-family: var(--font-garamond);
   font-size: var(--fs-h3);
   font-style: italic;
@@ -2210,6 +2171,7 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
 
 .story-count {
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
   font-family: var(--font-interphases);
   font-size: var(--fs-eyebrow);
   letter-spacing: 0.12em;
@@ -2400,6 +2362,17 @@ html[data-theme="dark"] .photo-item img {
   }
 }
 
+
+/* Inside a story the header already names the shoot, so its cards drop the repeated
+   caption (it stays in the alt text and the lightbox). The no-JS fallback grids have no
+   story headers and keep theirs. */
+.story-head ~ .photo-item {
+  padding-bottom: 1.25rem;
+}
+
+.story-head ~ .photo-item .photo-overlay {
+  display: none;
+}
 
 /* Contact Sheet Proof Footer Caption */
 .photo-overlay {
@@ -2841,6 +2814,7 @@ html[data-theme="dark"] .photo-item img {
 
 .lightbox-counter {
   font-family: var(--font-garamond);
+  font-variant-numeric: lining-nums tabular-nums;
   font-size: 0.88rem;
   letter-spacing: 0.03em;
   color: rgba(255, 255, 255, 0.56);
@@ -3101,6 +3075,7 @@ html[data-theme="dark"] .package-card {
 }
 
 .package-name {
+  text-wrap: balance;
   font-family: var(--font-garamond);
   font-size: var(--fs-h3);
   font-style: italic;
@@ -3160,19 +3135,12 @@ footer {
   text-align: center;
 }
 
-.footer-commission .section-eyebrow,
 .footer-commission-title,
 .footer-commission-sub,
 .footer-cta-row {
   opacity: 0;
   transform: translateY(16px);
   transition: opacity 0.75s var(--motion-ease-cinematic), transform 0.75s var(--motion-ease-cinematic);
-}
-
-#inquire.is-in-view .footer-commission .section-eyebrow {
-  opacity: 1;
-  transform: translateY(0);
-  transition-delay: 0.10s;
 }
 
 #inquire.is-in-view .footer-commission-title {
@@ -3596,7 +3564,6 @@ footer .ft-sub {
   .hero-inner,
   .about-img,
   .about-wrap.is-in-view .about-img,
-  .about-text .section-eyebrow,
   .about-text .section-title,
   .about-role,
   .about-bio,
@@ -3615,7 +3582,6 @@ footer .ft-sub {
   .lightbox.open .lightbox-stage,
   .lightbox-img,
   .lightbox-img.frame-crossfade,
-  .footer-commission .section-eyebrow,
   .footer-commission-title,
   .footer-commission-sub,
   .footer-cta-row,

@@ -835,12 +835,29 @@ class LightboxController {
     this.#activeSourceFigure = null;
   }
 
+  // A frame that is still downloading shows its small filmstrip thumb (usually already
+  // loaded) at full size, instead of leaving the previous photo under the new caption.
+  #showFrame(current, fullSrc) {
+    this.preload(current);
+    const pending = this.#preloadCache.get(fullSrc);
+    const ready = !pending || (pending.complete && pending.naturalWidth > 0);
+    if (ready || !current.thumbSrc || typeof pending.decode !== 'function') {
+      this.#sourceWebpEl.srcset = fullSrc;
+      return;
+    }
+    this.#sourceWebpEl.srcset = current.thumbSrc;
+    const swap = () => {
+      if (this.#images[this.#currentIndex] === current) this.#sourceWebpEl.srcset = fullSrc;
+    };
+    pending.decode().then(swap, swap);
+  }
+
   #updateView() {
     if (!this.#images.length) return;
     const current = this.#images[this.#currentIndex];
 
     if (this.#sourceWebpEl) {
-      this.#sourceWebpEl.srcset = current.webpSrc || current.src.replace(/\.jpe?g$/i, '.webp');
+      this.#showFrame(current, current.webpSrc || current.src.replace(/\.jpe?g$/i, '.webp'));
     }
     if (this.#imgEl) {
       this.#imgEl.src = current.src;
