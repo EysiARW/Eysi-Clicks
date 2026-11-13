@@ -90,6 +90,25 @@ const photoData = {
 };
 
 
+/* Hero wheel rotation: the photos that turn through the three hero cards, in order.
+   The first three are the cards in index.html (left, centre, right); the rest enter from
+   the left one at a time. Any photo listed in photoData above can be added here. */
+const HERO_ROTATION = [
+  "predebut/portrait/EYSI-2-22.jpg",
+  "events/portrait/EYSI-7-3.jpg",
+  "institutional/EYSI-109.jpg",
+  "predebut/portrait/EYSI-5-5.jpg",
+  "events/landscape/EYSI-77.jpg",
+  "institutional/EYSI-57.jpg",
+  "predebut/portrait/EYSI-6-3.jpg",
+  "events/landscape/EYSI-1-62.jpg",
+  "institutional/EYSI-26.jpg",
+  "predebut/landscape/EYSI-1-62.jpg",
+  "events/landscape/EYSI-53.jpg",
+  "institutional/EYSI-32.jpg",
+];
+
+
 /* ── 1. DOMAIN MODEL & REPOSITORY ── */
 
 class PhotoAsset {
@@ -1875,6 +1894,249 @@ class EditorialMotionController {
 }
 
 
+/* ── 8b. HERO WHEEL (cards turn along the fan's own arc) ── */
+
+class HeroCarouselController {
+  // The resting fan (left / centre / right) is three spokes of one large wheel: the side
+  // cards sit one "step" (their rest rotation) either side of centre. The wheel turns that
+  // arc slowly left to right; the right card fades out, gets the next photo while hidden,
+  // and fades back in on the left. Paused it is exactly the original fan.
+  static #STEP_SECONDS = 5;
+  // In steps from centre: fully shown up to FULL, gone by EDGE, so three cards are always
+  // in view while a fourth fades in on the left or out on the right.
+  static #FULL = 1.2;
+  static #EDGE = 1.8;
+
+  #repository;
+  #transitionCoordinator;
+  #deck;
+  #lightboxEl;
+  #pool = [];
+  #nextPoolIdx = 0;
+  #cards = [];
+  #phase = 0;
+  #speed = 1;
+  #stepDeg = 8;
+  #radius = 935;
+  #lastTime = 0;
+  #rafId = null;
+  #inView = true;
+  #hovered = false;
+  #focused = false;
+  #needsMeasure = true;
+  #developFlip = false;
+
+  constructor(repository, transitionCoordinator) {
+    this.#repository = repository;
+    this.#transitionCoordinator = transitionCoordinator;
+    this.#deck = document.querySelector('.hero-deck');
+    this.#lightboxEl = document.getElementById('lightbox');
+    if (!this.#deck || transitionCoordinator?.prefersReducedMotion
+      || typeof requestAnimationFrame !== 'function') return;
+
+    this.#pool = this.#buildPool();
+    const [left, center, right, extra] = ['.hero-card-left', '.hero-card-center', '.hero-card-right', '.hero-card-extra']
+      .map(sel => this.#deck.querySelector(sel));
+    if (!left || !center || !right || !extra || this.#pool.length < 4) return;
+
+    this.#cards = [
+      { el: extra,  slot: -2, shown: false, interactive: false },
+      { el: left,   slot: -1, shown: true,  interactive: true },
+      { el: center, slot: 0,  shown: true,  interactive: true },
+      { el: right,  slot: 1,  shown: true,  interactive: true },
+    ];
+    this.#nextPoolIdx = 4 % this.#pool.length;
+    this.#preload(this.#pool[this.#nextPoolIdx]);
+    this.#whenEntranceSettled(() => this.#start());
+  }
+
+  #buildPool() {
+    const bySrc = new Map();
+    this.#repository.getCategories().forEach(cat => {
+      this.#repository.getPhotos(cat).forEach(asset => bySrc.set(asset.src, asset));
+    });
+    return HERO_ROTATION.map(src => bySrc.get(src)).filter(Boolean);
+  }
+
+  #whenEntranceSettled(callback) {
+    const root = document.documentElement;
+    if (root.classList.contains('hero-settled')) { callback(); return; }
+    let done = false;
+    const go = () => { if (!done) { done = true; callback(); } };
+    if (typeof MutationObserver === 'function') {
+      const watcher = new MutationObserver(() => {
+        if (root.classList.contains('hero-settled')) { watcher.disconnect(); go(); }
+      });
+      watcher.observe(root, { attributes: true, attributeFilter: ['class'] });
+    }
+    setTimeout(go, 2200);
+  }
+
+  #start() {
+    this.#deck.classList.add('is-turning');
+    this.#deck.addEventListener('pointerenter', () => { this.#hovered = true; });
+    this.#deck.addEventListener('pointerleave', () => { this.#hovered = false; this.#wake(); });
+    // Tabbing onto a card pauses the wheel so keyboard users can read and open it. Focus the
+    // lightbox hands back on close (after a click or Esc) does not, or the wheel would stay
+    // stopped after every visit.
+    let tabbed = false;
+    document.addEventListener('keydown', e => { tabbed = e.key === 'Tab'; });
+    document.addEventListener('pointerdown', () => { tabbed = false; }, { passive: true });
+    this.#deck.addEventListener('focusin', () => { this.#focused = tabbed; });
+    this.#deck.addEventListener('focusout', () => { this.#focused = false; this.#wake(); });
+    window.addEventListener('resize', () => { this.#needsMeasure = true; }, { passive: true });
+    document.addEventListener('visibilitychange', () => this.#wake());
+
+    if (typeof IntersectionObserver === 'function') {
+      new IntersectionObserver(entries => {
+        this.#inView = entries.some(e => e.isIntersecting);
+        this.#wake();
+      }).observe(this.#deck);
+    }
+    this.#render();
+    this.#wake();
+  }
+
+  // Runs the frame loop only while the deck is on screen and the tab is visible
+  #wake() {
+    if (this.#rafId !== null || !this.#inView || document.hidden) return;
+    this.#lastTime = performance.now();
+    this.#rafId = requestAnimationFrame(t => this.#tick(t));
+  }
+
+  #tick(now) {
+    this.#rafId = null;
+    if (!this.#inView || document.hidden) return;
+    const dt = Math.min(0.1, (now - this.#lastTime) / 1000);
+    this.#lastTime = now;
+
+    // Under the pointer, on keyboard focus, or behind the lightbox the wheel stops — but first
+    // glides to the nearest resting fan, so a pause never freezes a card half-faded. The
+    // target keeps any focused card on the visible side.
+    const paused = this.#hovered || this.#focused || this.#lightboxEl?.classList.contains('open');
+    if (paused) {
+      this.#speed = 0;
+      let rest = this.#phase < 0.5 ? 0 : 1;
+      const held = this.#cards.find(c => c.el === document.activeElement);
+      if (held && Math.abs(held.slot + rest) > 1) rest = 1 - rest;
+      this.#phase += (rest - this.#phase) * Math.min(1, dt * 5);
+      if (Math.abs(rest - this.#phase) < 0.0015) this.#phase = rest;
+    } else {
+      this.#speed += (1 - this.#speed) * Math.min(1, dt * 2);
+      this.#phase += (this.#speed * dt) / HeroCarouselController.#STEP_SECONDS;
+    }
+
+    if (this.#phase >= 1) {
+      this.#phase -= 1;
+      this.#cards.forEach(card => {
+        card.slot += 1;
+        if (card.slot > 1) {
+          card.slot = -2;
+          this.#assignNextPhoto(card.el);
+        }
+      });
+    }
+    this.#render();
+    this.#rafId = requestAnimationFrame(t => this.#tick(t));
+  }
+
+  #measure() {
+    this.#needsMeasure = false;
+    const ref = this.#deck.querySelector('.hero-card-right');
+    const cs = ref ? getComputedStyle(ref) : null;
+    const restX = parseFloat(cs?.getPropertyValue('--card-rest-x')) || 130;
+    const restRot = parseFloat(cs?.getPropertyValue('--card-rest-rot')) || 8;
+    this.#stepDeg = restRot;
+    this.#radius = restX / Math.sin(restRot * Math.PI / 180);
+  }
+
+  #render() {
+    if (this.#needsMeasure) this.#measure();
+    const full = HeroCarouselController.#FULL;
+    const edge = HeroCarouselController.#EDGE;
+    this.#cards.forEach(card => {
+      const steps = card.slot + this.#phase;
+      // Past the outer resting spokes a card slows as it fades, so arrivals and departures
+      // stay inside the deck's column instead of drifting over the hero text.
+      const reachRaw = Math.abs(steps);
+      const travel = reachRaw <= 1 ? steps : Math.sign(steps) * (1 + (reachRaw - 1) * 0.45);
+      const deg = travel * this.#stepDeg;
+      const rad = deg * Math.PI / 180;
+      const x = this.#radius * Math.sin(rad);
+      const y = this.#radius * (1 - Math.cos(rad));
+      const reach = Math.abs(steps);
+      let opacity = reach <= full ? 1 : Math.max(0, 1 - (reach - full) / (edge - full));
+      opacity = opacity * opacity * (3 - 2 * opacity);
+
+      const el = card.el;
+      el.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) rotate(${deg.toFixed(3)}deg)`;
+      el.style.opacity = opacity.toFixed(3);
+      const z = String(20 + Math.round(steps * 4));
+      if (el.style.zIndex !== z) el.style.zIndex = z;
+
+      // Only cards that are mostly shown can be clicked or focused
+      const interactive = opacity > 0.5;
+      if (interactive !== card.interactive) {
+        card.interactive = interactive;
+        el.setAttribute('tabindex', interactive ? '0' : '-1');
+        el.setAttribute('aria-hidden', interactive ? 'false' : 'true');
+        el.style.pointerEvents = interactive ? '' : 'none';
+      }
+      const shown = opacity > 0.02;
+      if (shown !== card.shown) {
+        card.shown = shown;
+        if (shown) this.#develop(el);
+      }
+    });
+  }
+
+  // Signature "print develops" sheet replays on each newly arriving photo
+  #develop(el) {
+    this.#developFlip = !this.#developFlip;
+    el.classList.remove('develop-a', 'develop-b');
+    el.classList.add(this.#developFlip ? 'develop-a' : 'develop-b');
+  }
+
+  #assignNextPhoto(el) {
+    const visibleSrcs = this.#cards.filter(c => c.el !== el).map(c => c.el.querySelector('img')?.getAttribute('src'));
+    let asset = this.#pool[this.#nextPoolIdx];
+    for (let i = 0; i < this.#pool.length && visibleSrcs.includes(asset.src); i++) {
+      this.#nextPoolIdx = (this.#nextPoolIdx + 1) % this.#pool.length;
+      asset = this.#pool[this.#nextPoolIdx];
+    }
+    this.#nextPoolIdx = (this.#nextPoolIdx + 1) % this.#pool.length;
+    this.#preload(this.#pool[this.#nextPoolIdx]);
+
+    const slug = asset.src.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase();
+    el.dataset.cat = asset.category;
+    el.dataset.slug = slug;
+    el.dataset.idx = '0';
+    el.setAttribute('aria-label', `View ${asset.caption} (${asset.categoryLabel}) in Lightbox`);
+
+    const source = el.querySelector('source');
+    const img = el.querySelector('img');
+    if (source) source.srcset = asset.gridSrc;
+    if (img) {
+      img.src = asset.src;
+      img.alt = `${asset.caption} · ${asset.categoryLabel}`;
+      img.width = asset.orientation === 'portrait' ? 800 : 1200;
+      img.height = asset.orientation === 'portrait' ? 1000 : 800;
+    }
+    const title = el.querySelector('.monument-title');
+    const context = el.querySelector('.monument-context');
+    if (title) title.textContent = asset.caption;
+    if (context) context.textContent = asset.categoryLabel;
+  }
+
+  #preload(asset) {
+    if (!asset || typeof Image !== 'function') return;
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = asset.gridSrc;
+  }
+}
+
+
 /* ── 9. APPLICATION BOOTSTRAP ── */
 
 const repository            = new PortfolioRepository(photoData, CATS);
@@ -1885,6 +2147,7 @@ const lightboxController    = new LightboxController(transitionCoordinator, curs
 const galleryPresenter      = new GalleryPresenter(repository, transitionCoordinator, lightboxController, cursorLoupe);
 const telemetryHud          = new TelemetryHudController();
 const editorialMotion       = new EditorialMotionController(transitionCoordinator);
+const heroCarousel          = new HeroCarouselController(repository, transitionCoordinator);
 
 // Keep the footer copyright year current without a yearly edit
 const footerYearEl = document.getElementById('ft-year');
