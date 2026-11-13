@@ -308,6 +308,7 @@ nav.is-scrolled {
   display: flex;
   align-items: center;
   min-height: 44px;
+  min-width: 44px;
   gap: 0.75rem;
   text-decoration: none;
   color: var(--text);
@@ -396,8 +397,10 @@ html[data-theme="dark"] .hero-logo {
   transition: color 0.25s;
   padding: 0.65rem 0.25rem;
   min-height: 44px;
+  min-width: 44px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
 }
 
 .nav-links a::after {
@@ -1160,6 +1163,14 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
         translate3d(calc(var(--card-rest-x) * (1 - 0.8 * var(--deck-gather))), var(--card-rest-y), 0)
         rotate(calc(var(--card-rest-rot) * (1 - var(--deck-gather))));
     }
+  }
+}
+
+/* On short screens the hero content is taller than the viewport, so the absolutely
+   positioned scroll hint would sit on top of the deck and motif; hide it there. */
+@media (max-height: 700px) {
+  #hero .hero-scroll-hint {
+    display: none;
   }
 }
 
@@ -2149,6 +2160,12 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
   animation: heroFadeUp 0.5s var(--motion-ease-cinematic) 0.18s both;
 }
 
+.story-head.rise-done .story-title,
+.story-head.rise-done .story-count {
+  opacity: 1;
+  animation: none;
+}
+
 @keyframes storyTitleIn {
   0% {
     opacity: 0;
@@ -2208,6 +2225,10 @@ html[data-theme="dark"] .photo-item {
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
   animation: cardRise 0.6s var(--motion-ease-cinematic) var(--reveal-delay, 0ms) backwards;
+}
+
+.photo-item.rise-done {
+  animation: none;
 }
 
 @keyframes cardRise {
@@ -2460,6 +2481,13 @@ html[data-theme="dark"] .photo-item img {
   transition: opacity 0.6s ease;
 }
 
+/* Hidden controls must not catch taps (keyboard focus still reaches them and reveals them) */
+.lightbox.is-cinema:not(.chrome-awake) .lightbox-topbar,
+.lightbox.is-cinema:not(.chrome-awake) .lightbox-nav,
+.lightbox.is-cinema:not(.chrome-awake) .lightbox-filmstrip {
+  pointer-events: none;
+}
+
 .lightbox.is-cinema.chrome-awake .lightbox-topbar,
 .lightbox.is-cinema.chrome-awake .lightbox-nav,
 .lightbox.is-cinema.chrome-awake .lightbox-filmstrip,
@@ -2470,11 +2498,11 @@ html[data-theme="dark"] .photo-item img {
   transition-duration: 0.2s;
 }
 
-.lightbox.is-cinema .lightbox-picture[data-kb="a"] {
+.lightbox-picture[data-kb="a"] {
   animation: kenBurnsA 3.8s cubic-bezier(0.33, 0, 0.2, 1) both;
 }
 
-.lightbox.is-cinema .lightbox-picture[data-kb="b"] {
+.lightbox-picture[data-kb="b"] {
   animation: kenBurnsB 3.8s cubic-bezier(0.33, 0, 0.2, 1) both;
 }
 
@@ -3080,7 +3108,8 @@ html[data-theme="dark"] .package-card {
 footer {
   position: relative;
   z-index: 1;
-  padding: var(--section-pad-y) var(--container-pad) 3rem;
+  /* Bottom padding clears the floating TOP button so it never sits on the footer links */
+  padding: var(--section-pad-y) var(--container-pad) calc(var(--control-height) + 3rem);
   border-top: 1px solid var(--border);
   background: var(--bg2);
   margin-top: auto;
@@ -3412,7 +3441,8 @@ footer .ft-sub {
 /* Multi-Viewport Hardening (< 480px) */
 @media (max-width: 480px) {
   nav {
-    padding-inline: 0.85rem;
+    /* Same side edges as every section below (CLAUDE.md: shared container edges) */
+    padding-inline: var(--container-pad);
   }
   .nav-links {
     gap: 0.75rem;
@@ -3439,9 +3469,6 @@ footer .ft-sub {
 
 /* Ultra-Compact Phone Hardening (<= 350px e.g. iPhone SE 1st Gen 320px) */
 @media (max-width: 350px) {
-  nav {
-    padding-inline: 0.45rem;
-  }
   .nav-actions {
     gap: 0.35rem;
   }

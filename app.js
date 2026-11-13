@@ -338,7 +338,9 @@ class ThemeManager {
   }
 
   #init() {
-    const saved = localStorage.getItem(this.#storageKey);
+    // Blocked site data makes localStorage throw; that must not stop the rest of app.js
+    let saved = null;
+    try { saved = localStorage.getItem(this.#storageKey); } catch {}
     const initial = saved === 'dark' ? 'dark' : 'light';
     this.#applyTheme(initial, false);
 
@@ -561,12 +563,17 @@ class LightboxController {
       if (token !== this.#flightToken) return;
       this.#lightboxEl.classList.remove('is-flying');
       if (!this.isOpen || !from.width || !from.height) return;
+      // Frame still loading after the wait: its box is not the photo's real shape yet, so
+      // just show it rather than fly to a size it is about to jump away from.
+      if (!img.complete || !img.naturalWidth) return;
       const to = img.getBoundingClientRect();
       if (!to.width || !to.height) return;
       const dx = (from.left + from.width / 2) - (to.left + to.width / 2);
       const dy = (from.top + from.height / 2) - (to.top + to.height / 2);
+      // One uniform scale (matched by area) so cropped or rotated sources never squash the photo
+      const scale = Math.sqrt((from.width * from.height) / (to.width * to.height));
       img.animate([
-        { transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width}, ${from.height / to.height})` },
+        { transform: `translate(${dx}px, ${dy}px) scale(${scale})` },
         { transform: 'none' }
       ], { duration: 460, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
     };
@@ -584,7 +591,8 @@ class LightboxController {
     if (!current || !img || typeof img.animate !== 'function'
       || this.#transitionCoordinator.prefersReducedMotion) return;
     const from = img.getBoundingClientRect();
-    const target = [...document.querySelectorAll('.cat-panel.active .photo-item img, .hero-card img')]
+    // Grid cards only: hero cards crop and rotate their photo, so a flight back would distort
+    const target = [...document.querySelectorAll('.cat-panel.active .photo-item img')]
       .find(el => el.getAttribute('src') === current.src && this.#isOnScreen(el));
     if (!target || !from.width) return;
     const to = target.getBoundingClientRect();
@@ -602,7 +610,7 @@ class LightboxController {
 
     const flight = clone.animate([
       { transform: 'none' },
-      { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width}, ${to.height / from.height})` }
+      { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width})` }
     ], { duration: 380, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
     const cleanup = () => clone.remove();
     flight.onfinish = cleanup;
@@ -620,6 +628,7 @@ class LightboxController {
     if (!this.#isZoomed) this.#flyOut();
     this.#lightboxEl.classList.remove('flip-open', 'is-flying');
     this.stopSlideshow();
+    this.#setKenBurns('');
     this.#resetZoom();
     this.#state = LightboxState.CLOSED;
 
@@ -649,12 +658,7 @@ class LightboxController {
       this.#resetZoom();
       this.#state = LightboxState.VIEWING;
     } else if (this.#state === LightboxState.SLIDESHOW || this.#slideshowInterval) {
-      if (this.#slideshowInterval) {
-        clearInterval(this.#slideshowInterval);
-        this.#slideshowInterval = window.setInterval(() => {
-          this.navigate(1);
-        }, 3500);
-      }
+      this.#restartSlideshowTimer();
     }
     this.#currentIndex = (this.#currentIndex + dir + this.#images.length) % this.#images.length;
     this.#triggerFrameCrossfade(dir >= 0 ? 'next' : 'prev');
@@ -673,6 +677,7 @@ class LightboxController {
 
   toggleZoom() {
     if (!this.#imgEl) return;
+    this.#setKenBurns('');
     if (this.#state === LightboxState.SLIDESHOW || this.#slideshowInterval) {
       this.stopSlideshow();
       this.#isZoomed = true;
@@ -725,14 +730,33 @@ class LightboxController {
     this.#lightboxEl.classList.toggle('is-cinema', on);
     this.#lightboxEl.classList.remove('chrome-awake');
     clearTimeout(this.#chromeTimer);
-    this.#kenBurnsFlip = false;
-    this.#lightboxEl.querySelector('.lightbox-picture')?.setAttribute('data-kb', on ? 'a' : '');
+    // Starting sets the first push-in; pausing leaves the current frame where it is (no snap
+    // back) until the next navigation, zoom or close clears it.
+    if (on) {
+      this.#kenBurnsFlip = false;
+      this.#setKenBurns('a');
+    }
+  }
+
+  #setKenBurns(value) {
+    this.#lightboxEl?.querySelector('.lightbox-picture')?.setAttribute('data-kb', value);
   }
 
   #nextKenBurns() {
-    if (!this.#lightboxEl?.classList.contains('is-cinema')) return;
+    if (!this.#lightboxEl?.classList.contains('is-cinema')) {
+      this.#setKenBurns('');
+      return;
+    }
     this.#kenBurnsFlip = !this.#kenBurnsFlip;
-    this.#lightboxEl.querySelector('.lightbox-picture')?.setAttribute('data-kb', this.#kenBurnsFlip ? 'b' : 'a');
+    this.#setKenBurns(this.#kenBurnsFlip ? 'b' : 'a');
+  }
+
+  #restartSlideshowTimer() {
+    if (!this.#slideshowInterval) return;
+    clearInterval(this.#slideshowInterval);
+    this.#slideshowInterval = window.setInterval(() => {
+      this.navigate(1);
+    }, 3500);
   }
 
   #wakeChrome() {
@@ -874,8 +898,10 @@ class LightboxController {
         if (this.#currentIndex !== idx) {
           const dir = idx > this.#currentIndex ? 'next' : 'prev';
           this.#resetZoom();
+          this.#restartSlideshowTimer();
           this.#currentIndex = idx;
           this.#triggerFrameCrossfade(dir);
+          this.#nextKenBurns();
           this.#updateView();
         }
       });
@@ -897,17 +923,13 @@ class LightboxController {
     });
   }
 
-  #handleHashChange(evt) {
-    let hash = window.location?.hash || '';
-    if (evt && evt.newURL) {
-      try {
-        const u = new URL(evt.newURL);
-        if (u.hash) hash = u.hash;
-      } catch (_) {
-        const hashIdx = evt.newURL.indexOf('#');
-        if (hashIdx !== -1) hash = evt.newURL.slice(hashIdx);
-      }
-    }
+  #handleHashChange() {
+    // Read the live hash, never evt.newURL: stepping through photos quickly queues several
+    // hashchange events, and replaying their stale URLs dragged the viewer back to photos
+    // already passed (and reset zoom). A closed viewer ignores them, so a late event can't
+    // write #photo-… back into the address bar after close().
+    if (!this.isOpen) return;
+    const hash = window.location?.hash || '';
     if (!hash || !hash.startsWith('#photo-')) {
       if (this.isOpen) {
         this.close();
@@ -935,8 +957,23 @@ class LightboxController {
   #bindEvents() {
     if (!this.#lightboxEl) return;
 
-    this.#lightboxEl.addEventListener('pointermove', () => this.#wakeChrome(), { passive: true });
-    this.#lightboxEl.addEventListener('pointerdown', () => this.#wakeChrome(), { passive: true });
+    // While cinema controls are hidden, the first tap only wakes them: it must not land on an
+    // invisible Close button, the stage (close) or the photo (zoom).
+    let swallowNextClick = false;
+    this.#lightboxEl.addEventListener('pointermove', e => {
+      if (e.pointerType === 'mouse') this.#wakeChrome();
+    }, { passive: true });
+    this.#lightboxEl.addEventListener('pointerdown', () => {
+      swallowNextClick = this.#lightboxEl.classList.contains('is-cinema')
+        && !this.#lightboxEl.classList.contains('chrome-awake');
+      this.#wakeChrome();
+    }, { capture: true, passive: true });
+    this.#lightboxEl.addEventListener('click', e => {
+      if (!swallowNextClick) return;
+      swallowNextClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    }, { capture: true });
 
     this.#lightboxEl.addEventListener('click', e => {
       if (e.target === this.#lightboxEl || e.target.classList.contains('lightbox-stage')) {
@@ -1034,12 +1071,8 @@ class LightboxController {
       });
     }
 
-    window.addEventListener('hashchange', evt => {
-      this.#handleHashChange(evt);
-    });
-    window.addEventListener('popstate', evt => {
-      this.#handleHashChange(evt);
-    });
+    window.addEventListener('hashchange', () => this.#handleHashChange());
+    window.addEventListener('popstate', () => this.#handleHashChange());
 
     // Touch swipe navigation and zoom drag-to-pan
     let touchStartX = 0;
@@ -1273,9 +1306,13 @@ class GalleryPresenter {
         .sort((a, b) => (a.boundingClientRect.top - b.boundingClientRect.top)
           || (a.boundingClientRect.left - b.boundingClientRect.left));
       arriving.forEach((entry, i) => {
-        entry.target.style.setProperty?.('--reveal-delay', `${Math.min(i, 5) * 70}ms`);
-        entry.target.classList.add('is-revealed');
-        observer.unobserve(entry.target);
+        const el = entry.target;
+        el.style.setProperty?.('--reveal-delay', `${Math.min(i, 5) * 70}ms`);
+        el.classList.add('is-revealed');
+        // Panels toggle display:none, which would restart these entrance animations on every
+        // tab switch; once played, they are switched off for good.
+        el.addEventListener?.('animationend', () => el.classList.add('rise-done'), { once: true });
+        observer.unobserve(el);
       });
     }, { threshold: 0.08, rootMargin: '0px 0px 40px 0px' });
   }
@@ -1385,6 +1422,7 @@ class GalleryPresenter {
       figure.addEventListener('mouseenter', () => this.#lightbox.preload(asset), { passive: true });
       // Touch has no hover: start fetching the full-size frame as soon as the finger lands
       figure.addEventListener('pointerdown', () => this.#lightbox.preload(asset), { passive: true });
+      figure.addEventListener('focus', () => this.#lightbox.preload(asset));
       const activate = () => this.#lightbox.open(photos, idx, figure);
       figure.addEventListener('click', activate);
       figure.tabIndex = 0;
@@ -1455,6 +1493,10 @@ class GalleryPresenter {
           if (found !== -1) targetIdx = found;
         }
 
+        // Keep ?tab= on the photo's category so a copied #photo- link reopens this exact photo
+        if (cat !== this.activeCategory && this.#repository.isValidCategory(cat)) {
+          this.switchTab(cat, false, false);
+        }
         this.#lightbox.open(photos, Math.min(targetIdx, photos.length - 1), frame);
       };
 
@@ -1487,7 +1529,15 @@ class GalleryPresenter {
     if (!hash || !hash.startsWith('#photo-')) return;
     const targetSlug = hash.replace(/^#photo-/, '').toLowerCase();
 
-    for (const cat of this.#repository.getCategories()) {
+    // File names repeat across categories (Pre-Debut and Events share EYSI-7-3, 8-3, …), so the
+    // category in ?tab= decides first; the lightbox and hero keep ?tab= in sync with the photo.
+    const requestedTab = new URLSearchParams(window.location?.search || '').get('tab');
+    const categories = this.#repository.getCategories();
+    const ordered = this.#repository.isValidCategory(requestedTab)
+      ? [requestedTab, ...categories.filter(c => c !== requestedTab)]
+      : categories;
+
+    for (const cat of ordered) {
       const photos = this.#repository.getPhotos(cat);
       const idx = photos.findIndex((p, i) => {
         const s = (p.src && p.src.split('/').pop().replace(/\.[^.]+$/, '')) || String(i + 1);

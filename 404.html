@@ -3,6 +3,10 @@
 
 <head>
   <meta charset="UTF-8">
+  <!-- GitHub Pages serves this page for any missing path (e.g. /Eysi-Clicks/a/b), so relative
+       links would resolve inside that path. Anchor them to the project root there; locally
+       (served from the site root) relative paths already work. -->
+  <script>(function(){var seg=location.pathname.split('/')[1];if(/\.github\.io$/.test(location.hostname)&&seg&&seg!=='404.html'){var b=document.createElement('base');b.href='/'+seg+'/';document.head.appendChild(b);}})();</script>
   <style>html{background:#faf8f5}html[data-theme="dark"]{background:#0a0a0b}</style>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>404 — Page Not Found · EYSI CLICKS</title>
