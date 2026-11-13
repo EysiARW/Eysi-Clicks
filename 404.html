@@ -73,8 +73,8 @@
   <script>
     (function() {
       try {
-        var saved = localStorage.getItem('theme');
-        if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        // Same key and default (Daylight) as ThemeManager on the main page
+        if (localStorage.getItem('eysiclicks-theme') === 'dark') {
           document.documentElement.setAttribute('data-theme', 'dark');
           var meta = document.getElementById('meta-theme-color');
           if (meta) meta.setAttribute('content', '#0a0a0b');
@@ -126,7 +126,8 @@
     <div class="footer-colophon">
       <div class="footer-brand-col">
         <div class="logo-ft">EYSI CLICKS</div>
-        <p>EYSI CLICKS · Cabuyao, Laguna</p>
+        <p>Cabuyao, Laguna</p>
+        <p class="ft-sub">© <span id="ft-year">2026</span> Andrei C. Capoy</p>
       </div>
 
       <div class="ft-socials" aria-label="Social links">
@@ -138,6 +139,8 @@
       </div>
     </div>
   </footer>
+
+  <script>document.getElementById('ft-year').textContent = String(new Date().getFullYear());</script>
 
 </body>
 </html>
