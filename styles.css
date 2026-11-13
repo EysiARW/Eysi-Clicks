@@ -1166,9 +1166,9 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   z-index: 60 !important;
 }
 
-/* The two portals at the ends of the wheel's arc: a soft bronze slit of light that a card
-   folds into on the right and unfolds out of on the left. JS sizes and places each one
-   exactly where a card turns edge-on, and drives only its opacity. */
+/* The two portals at the ends of the wheel's arc: a soft bronze light behind the cards that
+   a card fades into on the right and emerges from on the left. JS sizes and places each
+   one where a card disappears, and drives only its opacity. */
 .hero-portal {
   position: absolute;
   left: 50%;
@@ -1176,33 +1176,10 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   transform-origin: 50% 110%;
   opacity: 0;
   pointer-events: none;
-  z-index: 40;
-}
-
-.hero-portal::before,
-.hero-portal::after {
-  content: '';
-  position: absolute;
-  top: -6%;
-  bottom: -6%;
-  left: 50%;
-  border-radius: var(--radius-pill);
-}
-
-.hero-portal::before {
-  width: 44px;
-  margin-left: -22px;
-  background: radial-gradient(ellipse at center,
-    color-mix(in srgb, var(--accent-bronze) 42%, transparent) 0%,
-    transparent 70%);
-}
-
-.hero-portal::after {
-  width: 2px;
-  margin-left: -1px;
-  background: linear-gradient(to bottom, transparent,
-    color-mix(in srgb, var(--accent-bronze) 85%, transparent) 30%,
-    color-mix(in srgb, var(--accent-bronze) 85%, transparent) 70%, transparent);
+  z-index: 0;
+  background: radial-gradient(ellipse 50% 50% at center,
+    color-mix(in srgb, var(--accent-bronze) 30%, transparent) 0%,
+    transparent 100%);
 }
 
 /* Stable Hover & Focus: outer figure keeps its stationary hit-box while inner mat lifts smoothly */
@@ -1263,17 +1240,18 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
 }
 
 /* Small desktop (960px - 1199px): the showcase column is too narrow for the full fan,
-   so the right card would run past the viewport edge. */
+   so the right card would run past the viewport edge, and cards arriving on the hero
+   wheel's left would cross the tagline. */
 @media (min-width: 960px) and (max-width: 1199px) {
   .hero-card {
-    width: 200px;
-    margin-left: -100px;
+    width: 188px;
+    margin-left: -94px;
   }
   .hero-card-left {
-    --card-rest-x: -108px;
+    --card-rest-x: -102px;
   }
   .hero-card-right {
-    --card-rest-x: 108px;
+    --card-rest-x: 102px;
   }
 }
 

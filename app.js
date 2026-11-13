@@ -1900,13 +1900,13 @@ class HeroCarouselController {
   // The resting fan (left / centre / right) is three spokes of one large wheel: the side
   // cards sit one "step" (their rest rotation) either side of centre. The wheel turns that
   // arc left to right at one constant speed. Two steps out on each side is a portal: the
-  // right card folds edge-on into it, gets the next photo while hidden, and unfolds out of
-  // the left portal. Paused it is exactly the original fan.
+  // right card sinks back and fades into it, gets the next photo while hidden, and emerges
+  // from the left portal. Paused it is exactly the original fan.
   static #STEP_SECONDS = 5;
   // In steps from centre: a card is whole up to FULL and fully inside a portal at PORTAL.
   // PORTAL must be 2 with four cards, so the one leaving on the right and the one arriving
   // on the left are the same card at the same moment.
-  static #FULL = 1.1;
+  static #FULL = 1;
   static #PORTAL = 2;
 
   #repository;
@@ -2089,17 +2089,16 @@ class HeroCarouselController {
     let glow = 0;
     this.#cards.forEach(card => {
       const steps = card.slot + this.#phase;
-      // The arc speed never changes. Near a portal the card turns edge-on (narrows) and
-      // fades, so it folds into the slit instead of slowing down or drifting over the text.
+      // The arc speed never changes. Near a portal the card sinks back (a slight uniform
+      // shrink) and fades into the glow, which also keeps it off the hero text.
       const into = smooth((Math.abs(steps) - full) / (portal - full));
-      const scaleX = 1 - 0.9 * into;
-      const scaleY = 1 - 0.12 * into;
-      const opacity = 1 - smooth((into - 0.5) / 0.5);
+      const scale = 1 - 0.4 * into;
+      const opacity = 1 - into;
       // Each portal is brightest while a card is half-way through it
       if (into > 0 && into < 1) glow = Math.max(glow, Math.sin(Math.PI * into));
 
       const el = card.el;
-      el.style.transform = `${this.#arc(steps)} scale(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)})`;
+      el.style.transform = `${this.#arc(steps)} scale(${scale.toFixed(3)})`;
       el.style.opacity = opacity.toFixed(3);
       const z = String(20 + Math.round(steps * 4));
       if (el.style.zIndex !== z) el.style.zIndex = z;
