@@ -504,6 +504,8 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   text-align: center;
   padding: calc(var(--header-height) + 1rem) var(--container-pad) 3.5rem;
   overflow: hidden;
+  /* clip, unlike hidden, is not a scroll container, so the deck's view() timeline follows the page scroll */
+  overflow: clip;
 }
 
 .hero-glow {
@@ -829,7 +831,8 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   animation: bmHighlightDraw 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.36s both;
 }
 
-#gallery.is-in-view .section-title .bm-char {
+#gallery.is-in-view .section-title .bm-char,
+#packages.is-in-view .section-title .bm-char {
   animation: bmCharInUp 0.68s cubic-bezier(0.16, 1, 0.3, 1) calc(0.08s + var(--char-idx, 0) * 26ms) both;
 }
 
@@ -1131,6 +1134,38 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   --card-hover-lift: -18px;
   transform: translate3d(var(--card-rest-x), var(--card-rest-y), 0) rotate(var(--card-rest-rot));
   animation: deckFanRight 0.75s var(--motion-ease-spring) calc(var(--motion-delay-deck) + 160ms) backwards;
+}
+
+/* Scroll-linked "gather": as the hero scrolls away, the fan closes back into a stack, as if the
+   deck is being dealt down into the gallery. Driven by a registered property on .hero-deck so the
+   cards keep their own rest transforms; only browsers with scroll-driven animations run it, and
+   at the top of the page --deck-gather is 0, so the resting fan is unchanged. */
+@property --deck-gather {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-deck {
+      animation: deckGather linear both;
+      animation-timeline: view();
+      animation-range: exit 0% exit 100%;
+    }
+
+    .hero-card-left,
+    .hero-card-right {
+      transform:
+        translate3d(calc(var(--card-rest-x) * (1 - 0.8 * var(--deck-gather))), var(--card-rest-y), 0)
+        rotate(calc(var(--card-rest-rot) * (1 - var(--deck-gather))));
+    }
+  }
+}
+
+@keyframes deckGather {
+  from { --deck-gather: 0; transform: translate3d(0, 0, 0) scale(1); }
+  to   { --deck-gather: 1; transform: translate3d(0, 6%, 0) scale(0.94); }
 }
 
 /* Stable Hover & Focus: outer figure keeps its stationary hit-box while inner mat lifts smoothly */
@@ -2100,6 +2135,33 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
   color: var(--text);
 }
 
+/* Story titles rise with the same stretch-and-settle move as the section headings */
+.story-head .story-title,
+.story-head .story-count {
+  opacity: 0;
+}
+
+.story-head.is-revealed .story-title {
+  animation: storyTitleIn 0.68s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.story-head.is-revealed .story-count {
+  animation: heroFadeUp 0.5s var(--motion-ease-cinematic) 0.18s both;
+}
+
+@keyframes storyTitleIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 48%, 0) scaleY(1.22);
+    transform-origin: 0 100%;
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scaleY(1);
+    transform-origin: 0 100%;
+  }
+}
+
 .story-count {
   flex-shrink: 0;
   font-family: var(--font-interphases);
@@ -2135,19 +2197,68 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
     box-shadow 0.3s ease;
 }
 
-.photo-item:not(.is-revealed) {
-  transition-delay: var(--reveal-delay, 0ms);
-}
-
 html[data-theme="dark"] .photo-item {
   border-color: rgba(244, 241, 234, 0.065);
   box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
+/* Cards rise in small diagonal waves: GalleryPresenter sets --reveal-delay per batch.
+   An animation (not a transition delay) so hover transitions never inherit the stagger. */
 .photo-item.is-revealed {
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
-  transition-delay: 0ms;
+  animation: cardRise 0.6s var(--motion-ease-cinematic) var(--reveal-delay, 0ms) backwards;
+}
+
+@keyframes cardRise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* Signature motion, "the print develops": a mat-coloured sheet lifts off the photo
+   from the bottom up once the card is revealed. Same move on the hero cards. */
+.photo-item .photo-frame::after,
+.hero-monument-mat picture::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--surface-mat);
+  transform: scaleY(1);
+  transform-origin: 50% 0;
+  pointer-events: none;
+}
+
+.photo-item.is-revealed .photo-frame::after {
+  transform: scaleY(0);
+  transition: transform 0.9s var(--motion-ease-cinematic) calc(var(--reveal-delay, 0ms) + 140ms);
+}
+
+.hero-monument-mat picture {
+  position: relative;
+}
+
+.hero-monument-mat picture::after {
+  animation: printDevelop 0.75s var(--motion-ease-cinematic) calc(var(--motion-delay-deck) + 120ms) both;
+}
+
+.hero-card-center .hero-monument-mat picture::after {
+  animation-delay: calc(var(--motion-delay-deck) + 200ms);
+}
+
+.hero-card-right .hero-monument-mat picture::after {
+  animation-delay: calc(var(--motion-delay-deck) + 280ms);
+}
+
+@keyframes printDevelop {
+  from { transform: scaleY(1); }
+  to   { transform: scaleY(0); }
 }
 
 .photo-item:hover {
@@ -2328,6 +2439,69 @@ html[data-theme="dark"] .photo-item img {
 
 .lightbox.open .lightbox-stage {
   animation: lightboxStageZoom 0.26s var(--motion-ease-cinematic) forwards;
+}
+
+/* Opened from a card: the photo itself flies in (LightboxController#flyIn), so the stage
+   stays put and the image waits, hidden, until its full frame is ready to land. */
+.lightbox.open.flip-open .lightbox-stage {
+  animation: none;
+}
+
+.lightbox.is-flying .lightbox-img {
+  opacity: 0;
+}
+
+/* Cinema slideshow: controls fade out while the slideshow plays and return on pointer
+   movement (.chrome-awake) or keyboard focus; each frame slowly pushes in, alternating drift. */
+.lightbox.is-cinema .lightbox-topbar,
+.lightbox.is-cinema .lightbox-nav,
+.lightbox.is-cinema .lightbox-filmstrip {
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.lightbox.is-cinema.chrome-awake .lightbox-topbar,
+.lightbox.is-cinema.chrome-awake .lightbox-nav,
+.lightbox.is-cinema.chrome-awake .lightbox-filmstrip,
+.lightbox.is-cinema .lightbox-topbar:has(:focus-visible),
+.lightbox.is-cinema .lightbox-nav:focus-visible,
+.lightbox.is-cinema .lightbox-filmstrip:has(:focus-visible) {
+  opacity: 1;
+  transition-duration: 0.2s;
+}
+
+.lightbox.is-cinema .lightbox-picture[data-kb="a"] {
+  animation: kenBurnsA 3.8s cubic-bezier(0.33, 0, 0.2, 1) both;
+}
+
+.lightbox.is-cinema .lightbox-picture[data-kb="b"] {
+  animation: kenBurnsB 3.8s cubic-bezier(0.33, 0, 0.2, 1) both;
+}
+
+.lightbox.is-cinema .lightbox-img.frame-crossfade[data-nav-dir] {
+  animation: photoCrossfade 0.6s ease;
+}
+
+@keyframes kenBurnsA {
+  from { transform: scale(1); }
+  to   { transform: scale(1.05) translate3d(-0.9%, -0.5%, 0); }
+}
+
+@keyframes kenBurnsB {
+  from { transform: scale(1); }
+  to   { transform: scale(1.05) translate3d(0.9%, 0.5%, 0); }
+}
+
+/* Stand-in photo that flies from the lightbox back into its card on close */
+.lightbox-fly-clone {
+  position: fixed;
+  z-index: 1001;
+  margin: 0;
+  object-fit: cover;
+  border-radius: var(--radius-photo);
+  transform-origin: 0 0;
+  pointer-events: none;
+  will-change: transform;
 }
 
 /* Top Exhibition Bar inside Lightbox */
@@ -2845,6 +3019,14 @@ html[data-theme="dark"] .photo-item img {
   border: 1px solid var(--border);
   border-radius: var(--radius-mat);
   box-shadow: 0 14px 38px -16px rgba(0, 0, 0, 0.055), 0 1px 4px rgba(0, 0, 0, 0.02);
+}
+
+#packages.is-in-view .package-card {
+  animation: cardRise 0.6s var(--motion-ease-cinematic) 0.22s backwards;
+}
+
+#packages.is-in-view .package-card + .package-card {
+  animation-delay: 0.32s;
 }
 
 html[data-theme="dark"] .package-card {
@@ -3369,6 +3551,19 @@ footer .ft-sub {
 
   .bm-hl.under i {
     transform: scaleX(1) !important;
+  }
+
+  .photo-item .photo-frame::after,
+  .hero-monument-mat picture::after {
+    display: none;
+  }
+
+  .story-head .story-title,
+  .story-head .story-count,
+  .package-card,
+  .lightbox-picture {
+    opacity: 1;
+    animation: none !important;
   }
 
   .scroll-line {

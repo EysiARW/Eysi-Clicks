@@ -471,6 +471,9 @@ class LightboxController {
   #lastFocusedElement = null;
   #activeSourceFigure = null;
   #preloadCache = new Map();
+  #flightToken = 0;
+  #kenBurnsFlip = false;
+  #chromeTimer = null;
 
   constructor(transitionCoordinator, cursorLoupe) {
     this.#transitionCoordinator = transitionCoordinator;
@@ -531,14 +534,91 @@ class LightboxController {
     this.#renderFilmstrip();
     this.#updateView();
 
+    const canFly = this.#canFly(sourceFigure);
+    if (canFly) this.#lightboxEl.classList.add('flip-open', 'is-flying');
     this.#lightboxEl.classList.add('open');
     document.body.style.overflow = 'hidden';
     const closeBtn = this.#lightboxEl.querySelector('.lightbox-close');
     if (closeBtn) closeBtn.focus();
+    if (canFly) this.#flyIn(sourceFigure.querySelector('img'));
+  }
+
+  // Spatial continuity: the photo grows out of the card that was clicked and shrinks back
+  // into its card on close. Transform-only (Web Animations), skipped for reduced motion.
+  #canFly(sourceFigure) {
+    const srcImg = sourceFigure?.querySelector?.('img');
+    return Boolean(srcImg && this.#imgEl
+      && typeof this.#imgEl.animate === 'function'
+      && typeof srcImg.getBoundingClientRect === 'function'
+      && !this.#transitionCoordinator.prefersReducedMotion);
+  }
+
+  #flyIn(srcImg) {
+    const token = ++this.#flightToken;
+    const from = srcImg.getBoundingClientRect();
+    const img = this.#imgEl;
+    const land = () => {
+      if (token !== this.#flightToken) return;
+      this.#lightboxEl.classList.remove('is-flying');
+      if (!this.isOpen || !from.width || !from.height) return;
+      const to = img.getBoundingClientRect();
+      if (!to.width || !to.height) return;
+      const dx = (from.left + from.width / 2) - (to.left + to.width / 2);
+      const dy = (from.top + from.height / 2) - (to.top + to.height / 2);
+      img.animate([
+        { transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width}, ${from.height / to.height})` },
+        { transform: 'none' }
+      ], { duration: 460, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+    };
+    // Wait for the full frame (normally already cached by the hover/press preload), but never
+    // hold the viewer back for more than a moment.
+    const decoded = typeof img.decode === 'function' ? img.decode() : Promise.resolve();
+    Promise.race([decoded, new Promise(resolve => setTimeout(resolve, 320))])
+      .catch(() => {})
+      .then(land);
+  }
+
+  #flyOut() {
+    const current = this.#images[this.#currentIndex];
+    const img = this.#imgEl;
+    if (!current || !img || typeof img.animate !== 'function'
+      || this.#transitionCoordinator.prefersReducedMotion) return;
+    const from = img.getBoundingClientRect();
+    const target = [...document.querySelectorAll('.cat-panel.active .photo-item img, .hero-card img')]
+      .find(el => el.getAttribute('src') === current.src && this.#isOnScreen(el));
+    if (!target || !from.width) return;
+    const to = target.getBoundingClientRect();
+
+    const clone = document.createElement('img');
+    clone.className = 'lightbox-fly-clone';
+    clone.src = img.currentSrc || img.src;
+    clone.alt = '';
+    clone.setAttribute('aria-hidden', 'true');
+    clone.style.left = `${from.left}px`;
+    clone.style.top = `${from.top}px`;
+    clone.style.width = `${from.width}px`;
+    clone.style.height = `${from.height}px`;
+    document.body.appendChild(clone);
+
+    const flight = clone.animate([
+      { transform: 'none' },
+      { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width}, ${to.height / from.height})` }
+    ], { duration: 380, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
+    const cleanup = () => clone.remove();
+    flight.onfinish = cleanup;
+    flight.oncancel = cleanup;
+  }
+
+  #isOnScreen(el) {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.bottom > 0 && r.top < window.innerHeight;
   }
 
   close() {
     if (!this.#lightboxEl || !this.isOpen) return;
+    this.#flightToken++;
+    if (!this.#isZoomed) this.#flyOut();
+    this.#lightboxEl.classList.remove('flip-open', 'is-flying');
     this.stopSlideshow();
     this.#resetZoom();
     this.#state = LightboxState.CLOSED;
@@ -578,6 +658,7 @@ class LightboxController {
     }
     this.#currentIndex = (this.#currentIndex + dir + this.#images.length) % this.#images.length;
     this.#triggerFrameCrossfade(dir >= 0 ? 'next' : 'prev');
+    this.#nextKenBurns();
     this.#updateView();
   }
 
@@ -630,10 +711,35 @@ class LightboxController {
     if (this.#playBtn) this.#playBtn.setAttribute('aria-pressed', 'true');
     if (this.#playLabel) this.#playLabel.textContent = 'Pause';
     if (this.#slideshowBarEl) this.#slideshowBarEl.classList.add('playing');
+    this.#setCinema(true);
 
     this.#slideshowInterval = window.setInterval(() => {
       this.navigate(1);
     }, 3500);
+  }
+
+  // Cinema mode: while the slideshow plays, the controls fade out and each frame gets a slow
+  // push-in that alternates drift direction. Pointer movement or keyboard focus wakes the controls.
+  #setCinema(on) {
+    if (!this.#lightboxEl) return;
+    this.#lightboxEl.classList.toggle('is-cinema', on);
+    this.#lightboxEl.classList.remove('chrome-awake');
+    clearTimeout(this.#chromeTimer);
+    this.#kenBurnsFlip = false;
+    this.#lightboxEl.querySelector('.lightbox-picture')?.setAttribute('data-kb', on ? 'a' : '');
+  }
+
+  #nextKenBurns() {
+    if (!this.#lightboxEl?.classList.contains('is-cinema')) return;
+    this.#kenBurnsFlip = !this.#kenBurnsFlip;
+    this.#lightboxEl.querySelector('.lightbox-picture')?.setAttribute('data-kb', this.#kenBurnsFlip ? 'b' : 'a');
+  }
+
+  #wakeChrome() {
+    if (!this.#lightboxEl?.classList.contains('is-cinema')) return;
+    this.#lightboxEl.classList.add('chrome-awake');
+    clearTimeout(this.#chromeTimer);
+    this.#chromeTimer = setTimeout(() => this.#lightboxEl.classList.remove('chrome-awake'), 1800);
   }
 
   stopSlideshow() {
@@ -647,6 +753,7 @@ class LightboxController {
     if (this.#playBtn) this.#playBtn.setAttribute('aria-pressed', 'false');
     if (this.#playLabel) this.#playLabel.textContent = 'Slideshow';
     if (this.#slideshowBarEl) this.#slideshowBarEl.classList.remove('playing');
+    this.#setCinema(false);
   }
 
   #resetZoom() {
@@ -827,6 +934,9 @@ class LightboxController {
 
   #bindEvents() {
     if (!this.#lightboxEl) return;
+
+    this.#lightboxEl.addEventListener('pointermove', () => this.#wakeChrome(), { passive: true });
+    this.#lightboxEl.addEventListener('pointerdown', () => this.#wakeChrome(), { passive: true });
 
     this.#lightboxEl.addEventListener('click', e => {
       if (e.target === this.#lightboxEl || e.target.classList.contains('lightbox-stage')) {
@@ -1156,11 +1266,16 @@ class GalleryPresenter {
       return;
     }
     this.#revealObserver = new IntersectionObserver((entries, observer) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-revealed');
-          observer.unobserve(entry.target);
-        }
+      // Everything entering in the same frame forms one wave, ordered top-left to
+      // bottom-right; the stagger is capped so fast scrollers never wait on a card.
+      const arriving = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((a, b) => (a.boundingClientRect.top - b.boundingClientRect.top)
+          || (a.boundingClientRect.left - b.boundingClientRect.left));
+      arriving.forEach((entry, i) => {
+        entry.target.style.setProperty?.('--reveal-delay', `${Math.min(i, 5) * 70}ms`);
+        entry.target.classList.add('is-revealed');
+        observer.unobserve(entry.target);
       });
     }, { threshold: 0.08, rootMargin: '0px 0px 40px 0px' });
   }
@@ -1200,12 +1315,17 @@ class GalleryPresenter {
       const storyKey = PortfolioRepository.storyKey(asset);
       if (storyKey !== currentStory) {
         currentStory = storyKey;
-        grid.appendChild(this.#buildStoryHeader(asset.caption, storyCounts.get(storyKey), idx === 0));
+        const header = this.#buildStoryHeader(asset.caption, storyCounts.get(storyKey), idx === 0);
+        if (this.#revealObserver && !this.#transitionCoordinator.prefersReducedMotion) {
+          this.#revealObserver.observe(header);
+        } else {
+          header.classList.add('is-revealed');
+        }
+        grid.appendChild(header);
       }
 
       const figure = document.createElement('figure');
       figure.className = 'photo-item';
-      figure.style.setProperty?.('--reveal-delay', `${Math.min(idx * 35, 210)}ms`);
 
       if (!this.#revealObserver || this.#transitionCoordinator.prefersReducedMotion) {
         figure.classList.add('is-revealed');
@@ -1335,7 +1455,7 @@ class GalleryPresenter {
           if (found !== -1) targetIdx = found;
         }
 
-        this.#lightbox.open(photos, Math.min(targetIdx, photos.length - 1), null);
+        this.#lightbox.open(photos, Math.min(targetIdx, photos.length - 1), frame);
       };
 
       frame.addEventListener('click', handler);
@@ -1493,6 +1613,7 @@ class EditorialMotionController {
   #aboutSection;
   #aboutWrap;
   #gallerySection;
+  #packagesSection;
   #footerSection;
   #transitionCoordinator;
 
@@ -1504,6 +1625,7 @@ class EditorialMotionController {
     this.#aboutSection   = document.getElementById('about');
     this.#aboutWrap      = document.querySelector('.about-wrap');
     this.#gallerySection = document.getElementById('gallery');
+    this.#packagesSection = document.getElementById('packages');
     this.#footerSection  = document.getElementById('footer');
 
     this.#initKineticTypography();
@@ -1538,6 +1660,11 @@ class EditorialMotionController {
     const galleryTitle = document.querySelector('#gallery .section-title');
     if (galleryTitle) {
       this.#splitCharacters(galleryTitle, 0);
+    }
+
+    const packagesTitle = document.querySelector('#packages .section-title');
+    if (packagesTitle) {
+      this.#splitCharacters(packagesTitle, 0);
     }
   }
 
@@ -1619,6 +1746,7 @@ class EditorialMotionController {
     if (this.#transitionCoordinator?.prefersReducedMotion) {
       if (this.#aboutWrap) this.#aboutWrap.classList.add('is-in-view');
       if (this.#gallerySection) this.#gallerySection.classList.add('is-in-view');
+      if (this.#packagesSection) this.#packagesSection.classList.add('is-in-view');
       if (this.#footerSection) this.#footerSection.classList.add('is-in-view');
       return;
     }
@@ -1626,6 +1754,7 @@ class EditorialMotionController {
     if (typeof IntersectionObserver === 'undefined') {
       if (this.#aboutWrap) this.#aboutWrap.classList.add('is-in-view');
       if (this.#gallerySection) this.#gallerySection.classList.add('is-in-view');
+      if (this.#packagesSection) this.#packagesSection.classList.add('is-in-view');
       if (this.#footerSection) this.#footerSection.classList.add('is-in-view');
       return;
     }
@@ -1641,6 +1770,8 @@ class EditorialMotionController {
             entry.target.classList.add('is-in-view');
             const galTitle = this.#gallerySection.querySelector('.section-title');
             if (galTitle) this.#transitionCoordinator?.pulseDirectionalBlur(galTitle, 'y', 16, 480);
+          } else if (entry.target === this.#packagesSection) {
+            entry.target.classList.add('is-in-view');
           } else if (entry.target === this.#footerSection) {
             entry.target.classList.add('is-in-view');
           }
@@ -1654,6 +1785,7 @@ class EditorialMotionController {
 
     if (this.#aboutSection) revealObserver.observe(this.#aboutSection);
     if (this.#gallerySection) revealObserver.observe(this.#gallerySection);
+    if (this.#packagesSection) revealObserver.observe(this.#packagesSection);
     if (this.#footerSection) revealObserver.observe(this.#footerSection);
   }
 
