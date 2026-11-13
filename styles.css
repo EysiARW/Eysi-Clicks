@@ -21,7 +21,7 @@
 
 @font-face {
   font-family: 'TT Interphases';
-  src: url('fonts/TT-Interphases-Regular.ttf') format('truetype');
+  src: url('fonts/TT-Interphases-Regular.woff2') format('woff2'), url('fonts/TT-Interphases-Regular.ttf') format('truetype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -29,7 +29,7 @@
 
 @font-face {
   font-family: 'TT Interphases';
-  src: url('fonts/TT-Interphases-Medium.ttf') format('truetype');
+  src: url('fonts/TT-Interphases-Medium.woff2') format('woff2'), url('fonts/TT-Interphases-Medium.ttf') format('truetype');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -37,7 +37,7 @@
 
 @font-face {
   font-family: 'TT Interphases';
-  src: url('fonts/TT-Interphases-Bold.ttf') format('truetype');
+  src: url('fonts/TT-Interphases-Bold.woff2') format('woff2'), url('fonts/TT-Interphases-Bold.ttf') format('truetype');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -908,14 +908,16 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   color: var(--text-muted);
   margin-bottom: 1.5rem;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 0.65rem;
+  gap: 0.25rem 0.65rem;
   animation: heroFadeUp 0.50s var(--motion-ease-cinematic) var(--motion-delay-categories) backwards;
 }
 
 .bm-cat-pill {
   display: inline-block;
+  white-space: nowrap;
 }
 
 .bm-cat-pill:nth-of-type(1) {
@@ -1188,11 +1190,26 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   }
 }
 
+/* Small desktop (960px - 1199px): the showcase column is too narrow for the full fan,
+   so the right card would run past the viewport edge. */
+@media (min-width: 960px) and (max-width: 1199px) {
+  .hero-card {
+    width: 200px;
+    margin-left: -100px;
+  }
+  .hero-card-left {
+    --card-rest-x: -108px;
+  }
+  .hero-card-right {
+    --card-rest-x: 108px;
+  }
+}
+
 /* Mobile adjustments (< 600px, e.g. 360px - 390px) */
 @media (max-width: 599px) {
   .hero-deck {
-    max-width: 320px;
-    height: 350px;
+    max-width: min(320px, 100%);
+    height: 262px;
   }
   .hero-card {
     width: 156px;
@@ -1206,7 +1223,7 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
     font-size: 0.82rem;
   }
   .hero-card-left {
-    --card-rest-x: -72px;
+    --card-rest-x: -78px;
     --card-rest-y: 8px;
     --card-rest-rot: -5.5deg;
     --card-hover-lift: -10px;
@@ -1218,7 +1235,7 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
     --card-hover-lift: -12px;
   }
   .hero-card-right {
-    --card-rest-x: 72px;
+    --card-rest-x: 78px;
     --card-rest-y: 10px;
     --card-rest-rot: 5.5deg;
     --card-hover-lift: -10px;
@@ -1322,6 +1339,13 @@ html[data-theme="dark"] .hero-monument-mat picture {
   overflow: hidden;
 }
 
+/* The left and center cards are overlapped on their right side by the next card in the fan,
+   so their captions sit on the exposed left edge instead of the covered middle. */
+.hero-card-left .hero-monument-caption,
+.hero-card-center .hero-monument-caption {
+  justify-content: flex-start;
+}
+
 .monument-plate {
   font-weight: 600;
   color: var(--text);
@@ -1339,6 +1363,9 @@ html[data-theme="dark"] .hero-monument-mat picture {
   color: var(--text);
   font-weight: 500;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .monument-context {
@@ -2133,7 +2160,38 @@ html[data-theme="dark"] .photo-item:hover {
   border-radius: var(--radius-photo);
 }
 
+/* Low-res placeholder: the filmstrip thumb, sized to the photo's own shape, shown until the
+   grid image has loaded, so cards never sit as empty mats on slow connections. */
+.photo-item .photo-frame {
+  position: relative;
+}
+
+.photo-item .photo-frame::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  aspect-ratio: 3 / 2;
+  max-width: 100%;
+  transform: translate3d(-50%, 0, 0);
+  border-radius: var(--radius-photo);
+  background: var(--ph-image, none) center / cover no-repeat, var(--bg2);
+  opacity: 1;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+
+.photo-item .photo-frame.is-portrait::before {
+  aspect-ratio: 2 / 3;
+}
+
+.photo-item.has-image .photo-frame::before {
+  opacity: 0;
+}
+
 .photo-item img {
+  position: relative;
   width: auto;
   height: 100%;
   max-width: 100%;
@@ -3121,6 +3179,23 @@ footer .ft-sub {
   }
   .nav-logo-img {
     height: 26px;
+  }
+  .hero-card {
+    width: 132px;
+    margin-left: -66px;
+  }
+  .hero-card-left {
+    --card-rest-x: -72px;
+  }
+  .hero-card-right {
+    --card-rest-x: 72px;
+  }
+  .hero-card .monument-title {
+    font-size: 0.75rem;
+  }
+  .hero-categories {
+    letter-spacing: 0.06em;
+    column-gap: 0.45rem;
   }
 }
 
