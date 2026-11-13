@@ -507,8 +507,6 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   text-align: center;
   padding: calc(var(--header-height) + 1rem) var(--container-pad) 3.5rem;
   overflow: hidden;
-  /* clip, unlike hidden, is not a scroll container, so the deck's view() timeline follows the page scroll */
-  overflow: clip;
 }
 
 .hero-glow {
@@ -1139,33 +1137,6 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   animation: deckFanRight 0.75s var(--motion-ease-spring) calc(var(--motion-delay-deck) + 160ms) backwards;
 }
 
-/* Scroll-linked "gather": as the hero scrolls away, the fan closes back into a stack, as if the
-   deck is being dealt down into the gallery. Driven by a registered property on .hero-deck so the
-   cards keep their own rest transforms; only browsers with scroll-driven animations run it, and
-   at the top of the page --deck-gather is 0, so the resting fan is unchanged. */
-@property --deck-gather {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: 0;
-}
-
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .hero-deck {
-      animation: deckGather linear both;
-      animation-timeline: view();
-      animation-range: exit 0% exit 100%;
-    }
-
-    .hero-card-left,
-    .hero-card-right {
-      transform:
-        translate3d(calc(var(--card-rest-x) * (1 - 0.8 * var(--deck-gather))), var(--card-rest-y), 0)
-        rotate(calc(var(--card-rest-rot) * (1 - var(--deck-gather))));
-    }
-  }
-}
-
 /* On short screens the hero content is taller than the viewport, so the absolutely
    positioned scroll hint would sit on top of the deck and motif; hide it there. */
 @media (max-height: 700px) {
@@ -1174,9 +1145,45 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   }
 }
 
-@keyframes deckGather {
-  from { --deck-gather: 0; transform: translate3d(0, 0, 0) scale(1); }
-  to   { --deck-gather: 1; transform: translate3d(0, 6%, 0) scale(0.94); }
+/* Hero wheel (HeroCarouselController). The fourth card waits hidden until the wheel turns it
+   in; once turning, JS owns each card's transform, opacity and stacking. Every caption sits
+   on the exposed left edge because each card is overlapped by its right-hand neighbour. */
+.hero-card-extra {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hero-deck.is-turning .hero-card {
+  will-change: transform, opacity;
+}
+
+.hero-deck.is-turning .hero-monument-caption {
+  justify-content: flex-start;
+}
+
+.hero-deck.is-turning .hero-card:hover,
+.hero-deck.is-turning .hero-card:focus-visible {
+  z-index: 60 !important;
+}
+
+/* Each newly arriving photo replays the signature "print develops" sheet; two identical
+   keyframe names alternate so the animation restarts every time. */
+.hero-card.develop-a .hero-monument-mat picture::after {
+  animation: printDevelopA 0.9s var(--motion-ease-cinematic) both;
+}
+
+.hero-card.develop-b .hero-monument-mat picture::after {
+  animation: printDevelopB 0.9s var(--motion-ease-cinematic) both;
+}
+
+@keyframes printDevelopA {
+  from { transform: scaleY(1); }
+  to   { transform: scaleY(0); }
+}
+
+@keyframes printDevelopB {
+  from { transform: scaleY(1); }
+  to   { transform: scaleY(0); }
 }
 
 /* Stable Hover & Focus: outer figure keeps its stationary hit-box while inner mat lifts smoothly */
