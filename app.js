@@ -212,8 +212,29 @@ class PortfolioRepository {
     }
     const portraits = (this.#rawStore[cat].portrait || []).map(entry => ({ entry, orient: 'portrait' }));
     const landscapes = (this.#rawStore[cat].landscape || []).map(entry => ({ entry, orient: 'landscape' }));
-    const merged = [...portraits, ...landscapes];
+    const merged = PortfolioRepository.#groupByStory([...portraits, ...landscapes]);
     return merged.map(({ entry, orient }, idx) => new PhotoAsset(entry, cat, orient, idx));
+  }
+
+  // A "story" is one shoot, identified by its caption. Stories keep the order in which
+  // they first appear in photoData; photos inside a story keep portraits-then-landscapes.
+  static #groupByStory(items) {
+    const order = [];
+    const groups = new Map();
+    items.forEach(item => {
+      const key = PortfolioRepository.storyKey(item.entry);
+      if (!groups.has(key)) {
+        groups.set(key, []);
+        order.push(key);
+      }
+      groups.get(key).push(item);
+    });
+    return order.flatMap(key => groups.get(key));
+  }
+
+  static storyKey(entryOrAsset) {
+    const caption = typeof entryOrAsset === 'string' ? '' : (entryOrAsset?.caption || '');
+    return caption.trim().toLowerCase();
   }
 }
 
@@ -1144,6 +1165,23 @@ class GalleryPresenter {
     }, { threshold: 0.08, rootMargin: '0px 0px 40px 0px' });
   }
 
+  #buildStoryHeader(title, count, isFirst) {
+    const header = document.createElement('div');
+    header.className = isFirst ? 'story-head is-first' : 'story-head';
+
+    const heading = document.createElement('h3');
+    heading.className = 'story-title';
+    heading.textContent = title || 'Untitled';
+
+    const meta = document.createElement('p');
+    meta.className = 'story-count';
+    meta.textContent = `${count} ${count === 1 ? 'photo' : 'photos'}`;
+
+    header.appendChild(heading);
+    header.appendChild(meta);
+    return header;
+  }
+
   #buildGridDOM(gridId, photos) {
     const grid = document.getElementById(gridId);
     if (!grid) return;
@@ -1151,7 +1189,20 @@ class GalleryPresenter {
     grid.innerHTML = '';
     if (!photos.length) return;
 
+    const storyCounts = new Map();
+    photos.forEach(asset => {
+      const key = PortfolioRepository.storyKey(asset);
+      storyCounts.set(key, (storyCounts.get(key) || 0) + 1);
+    });
+    let currentStory = null;
+
     photos.forEach((asset, idx) => {
+      const storyKey = PortfolioRepository.storyKey(asset);
+      if (storyKey !== currentStory) {
+        currentStory = storyKey;
+        grid.appendChild(this.#buildStoryHeader(asset.caption, storyCounts.get(storyKey), idx === 0));
+      }
+
       const figure = document.createElement('figure');
       figure.className = 'photo-item';
       figure.style.setProperty?.('--reveal-delay', `${Math.min(idx * 35, 210)}ms`);
@@ -1652,3 +1703,7 @@ const lightboxController    = new LightboxController(transitionCoordinator, curs
 const galleryPresenter      = new GalleryPresenter(repository, transitionCoordinator, lightboxController, cursorLoupe);
 const telemetryHud          = new TelemetryHudController();
 const editorialMotion       = new EditorialMotionController(transitionCoordinator);
+
+// Keep the footer copyright year current without a yearly edit
+const footerYearEl = document.getElementById('ft-year');
+if (footerYearEl) footerYearEl.textContent = String(new Date().getFullYear());

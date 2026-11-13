@@ -10,6 +10,8 @@
   <meta name="author" content="Andrei C. Capoy">
   <link rel="canonical" href="https://eysiarw.github.io/Eysi-Clicks/">
   <meta name="theme-color" content="#faf8f5" id="meta-theme-color">
+  <!-- Apply a saved Darkroom theme before first paint so returning dark-mode visitors never see a light flash. ThemeManager in app.js takes over after load. -->
+  <script>try{if(localStorage.getItem('eysiclicks-theme')==='dark'){document.documentElement.setAttribute('data-theme','dark');document.getElementById('meta-theme-color').setAttribute('content','#0a0a0b');}}catch(e){}</script>
 
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="website">
@@ -50,6 +52,26 @@
 
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css">
+  <!-- Without JavaScript the tabs cannot switch, so show every category stacked and reveal the fallback photos -->
+  <noscript>
+    <style>
+      .gallery-controls { display: none; }
+      .cat-panel { display: block; }
+      .cat-panel + .cat-panel { margin-top: var(--space-3xl); }
+      .cat-panel::before {
+        display: block;
+        margin-bottom: var(--space-lg);
+        font-family: var(--font-garamond);
+        font-size: var(--fs-h3);
+        font-style: italic;
+        color: var(--text);
+      }
+      #panel-predebut::before { content: "Pre-Debut"; }
+      #panel-events::before { content: "Events"; }
+      #panel-institutional::before { content: "Institutional"; }
+      .photo-item img { opacity: 1; }
+    </style>
+  </noscript>
 
   <!-- JSON-LD Structured Data for Local SEO & Photography Portfolio -->
   <script type="application/ld+json">
@@ -233,10 +255,6 @@
             <img src="EYSI-3-15.jpg" alt="Andrei C. Capoy portrait" loading="lazy" decoding="async" width="800" height="1000">
           </picture>
         </div>
-        <figcaption class="about-img-tag">
-          <span class="about-tag-name">Andrei C. Capoy</span>
-          <span class="about-tag-role">Photographer</span>
-        </figcaption>
       </figure>
 
       <div class="about-text">
@@ -377,8 +395,51 @@
     </div>
 
     <div class="cat-panel" id="panel-institutional" role="tabpanel" aria-labelledby="tab-institutional">
-      <!-- Photos populated dynamically via app.js -->
-      <div class="photo-grid" id="grid-institutional"></div>
+      <!-- Photos populated dynamically via app.js; static fallback for noscript -->
+      <div class="photo-grid" id="grid-institutional">
+        <figure class="photo-item is-revealed">
+          <picture>
+            <source srcset="institutional/EYSI-32.grid.webp" type="image/webp">
+            <img src="institutional/EYSI-32.jpg" alt="Baccalaureate Mass · Graduates and faculty gathered in formal attire during a baccalaureate mass" width="1200" height="800" loading="lazy" decoding="async">
+          </picture>
+          <figcaption class="photo-overlay"><span class="photo-label">Baccalaureate Mass</span></figcaption>
+        </figure>
+        <figure class="photo-item is-revealed">
+          <picture>
+            <source srcset="institutional/EYSI-37.grid.webp" type="image/webp">
+            <img src="institutional/EYSI-37.jpg" alt="Baccalaureate Mass · Academic procession of graduates and university faculty in church ceremonies" width="1200" height="800" loading="lazy" decoding="async">
+          </picture>
+          <figcaption class="photo-overlay"><span class="photo-label">Baccalaureate Mass</span></figcaption>
+        </figure>
+        <figure class="photo-item is-revealed">
+          <picture>
+            <source srcset="institutional/EYSI-109.grid.webp" type="image/webp">
+            <img src="institutional/EYSI-109.jpg" alt="UC - PNC Foundation Week 2026 · University students and faculty participating in outdoor foundation week celebrations" width="1200" height="800" loading="lazy" decoding="async">
+          </picture>
+          <figcaption class="photo-overlay"><span class="photo-label">UC - PNC Foundation Week 2026</span></figcaption>
+        </figure>
+        <figure class="photo-item is-revealed">
+          <picture>
+            <source srcset="institutional/EYSI-145.grid.webp" type="image/webp">
+            <img src="institutional/EYSI-145.jpg" alt="UC - PNC Foundation Week 2026 · Campus community gathered outdoors during an institutional celebration" width="1200" height="800" loading="lazy" decoding="async">
+          </picture>
+          <figcaption class="photo-overlay"><span class="photo-label">UC - PNC Foundation Week 2026</span></figcaption>
+        </figure>
+        <figure class="photo-item is-revealed">
+          <picture>
+            <source srcset="institutional/EYSI-57.grid.webp" type="image/webp">
+            <img src="institutional/EYSI-57.jpg" alt="Academic Excellence Award · Three awardees on stage holding framed plaques beneath the Academic Excellence Award banner" width="1200" height="800" loading="lazy" decoding="async">
+          </picture>
+          <figcaption class="photo-overlay"><span class="photo-label">Academic Excellence Award</span></figcaption>
+        </figure>
+        <figure class="photo-item is-revealed">
+          <picture>
+            <source srcset="institutional/EYSI-26.grid.webp" type="image/webp">
+            <img src="institutional/EYSI-26.jpg" alt="Academic Excellence Award · Live band in matching mint outfits performing on stage during the awards night" width="1200" height="800" loading="lazy" decoding="async">
+          </picture>
+          <figcaption class="photo-overlay"><span class="photo-label">Academic Excellence Award</span></figcaption>
+        </figure>
+      </div>
     </div>
   </section>
 
@@ -392,6 +453,7 @@
       <div class="footer-brand-col">
         <div class="logo-ft">EYSI CLICKS</div>
         <p>Cabuyao, Laguna</p>
+        <p class="ft-sub">© <span id="ft-year">2026</span> Andrei C. Capoy</p>
       </div>
 
       <div class="ft-socials" aria-label="Social links">

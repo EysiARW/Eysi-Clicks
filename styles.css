@@ -1500,30 +1500,6 @@ html[data-theme="dark"] .about-img-inner {
   transform: scale(1.03);
 }
 
-.about-img-tag {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-  padding: 0 0.2rem;
-}
-
-.about-tag-name {
-  font-family: var(--font-garamond);
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--text);
-}
-
-.about-tag-role {
-  font-family: var(--font-interphases);
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
 .about-text {
   display: flex;
   flex-direction: column;
@@ -2095,6 +2071,42 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
     grid-template-columns: 1fr;
     --gap: 1.75rem;
   }
+}
+
+/* Story headers: one per shoot, spanning the full grid row so each story starts on a new line. */
+.story-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  /* Pull the header close to its own photos instead of the full grid gap below it */
+  margin-bottom: calc(var(--space-md) - var(--gap));
+  padding-top: var(--space-xl);
+  border-top: 1px solid var(--border);
+}
+
+.story-head.is-first {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.story-title {
+  font-family: var(--font-garamond);
+  font-size: var(--fs-h3);
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.story-count {
+  flex-shrink: 0;
+  font-family: var(--font-interphases);
+  font-size: var(--fs-eyebrow);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 
