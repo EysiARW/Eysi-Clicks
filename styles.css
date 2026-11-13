@@ -1166,24 +1166,43 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   z-index: 60 !important;
 }
 
-/* Each newly arriving photo replays the signature "print develops" sheet; two identical
-   keyframe names alternate so the animation restarts every time. */
-.hero-card.develop-a .hero-monument-mat picture::after {
-  animation: printDevelopA 0.9s var(--motion-ease-cinematic) both;
+/* The two portals at the ends of the wheel's arc: a soft bronze slit of light that a card
+   folds into on the right and unfolds out of on the left. JS sizes and places each one
+   exactly where a card turns edge-on, and drives only its opacity. */
+.hero-portal {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform-origin: 50% 110%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 40;
 }
 
-.hero-card.develop-b .hero-monument-mat picture::after {
-  animation: printDevelopB 0.9s var(--motion-ease-cinematic) both;
+.hero-portal::before,
+.hero-portal::after {
+  content: '';
+  position: absolute;
+  top: -6%;
+  bottom: -6%;
+  left: 50%;
+  border-radius: var(--radius-pill);
 }
 
-@keyframes printDevelopA {
-  from { transform: scaleY(1); }
-  to   { transform: scaleY(0); }
+.hero-portal::before {
+  width: 44px;
+  margin-left: -22px;
+  background: radial-gradient(ellipse at center,
+    color-mix(in srgb, var(--accent-bronze) 42%, transparent) 0%,
+    transparent 70%);
 }
 
-@keyframes printDevelopB {
-  from { transform: scaleY(1); }
-  to   { transform: scaleY(0); }
+.hero-portal::after {
+  width: 2px;
+  margin-left: -1px;
+  background: linear-gradient(to bottom, transparent,
+    color-mix(in srgb, var(--accent-bronze) 85%, transparent) 30%,
+    color-mix(in srgb, var(--accent-bronze) 85%, transparent) 70%, transparent);
 }
 
 /* Stable Hover & Focus: outer figure keeps its stationary hit-box while inner mat lifts smoothly */
