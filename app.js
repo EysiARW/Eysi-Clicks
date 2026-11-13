@@ -138,6 +138,9 @@ class PhotoAsset {
 
   get src()         { return this.#src; }
   get webpSrc()     { return this.#webpSrc; }
+  // Small derivatives written next to the full WebP (see CLAUDE.md "How to add a photo")
+  get gridSrc()     { return this.#webpSrc.replace(/\.webp$/i, '.grid.webp'); }
+  get thumbSrc()    { return this.#webpSrc.replace(/\.webp$/i, '.thumb.webp'); }
   get caption()     { return this.#caption; }
   get alt()         { return this.#alt; }
   get category()    { return this.#category; }
@@ -729,7 +732,8 @@ class LightboxController {
       thumb.setAttribute('aria-label', `View photo ${idx + 1}: ${image.caption || 'Untitled'}`);
 
       const img = document.createElement('img');
-      img.src = image.webpSrc || image.src.replace(/\.jpe?g$/i, '.webp');
+      const fullWebp = image.webpSrc || image.src.replace(/\.jpe?g$/i, '.webp');
+      img.src = image.thumbSrc || fullWebp;
       img.alt = `Thumbnail preview for ${image.caption || 'plate'} (${image.plateNumber || String(idx + 1).padStart(2, '0')})`;
       img.loading = 'lazy';
       img.decoding = 'async';
@@ -1159,8 +1163,11 @@ class GalleryPresenter {
       }
 
       const picture = document.createElement('picture');
+      picture.className = asset.orientation === 'portrait' ? 'photo-frame is-portrait' : 'photo-frame';
+      // The tiny filmstrip thumb doubles as a low-res placeholder while the grid image loads
+      picture.style.setProperty?.('--ph-image', `url("${asset.thumbSrc}")`);
       const sourceWebp = document.createElement('source');
-      sourceWebp.srcset = asset.webpSrc;
+      sourceWebp.srcset = asset.gridSrc;
       sourceWebp.type = 'image/webp';
 
       const img = document.createElement('img');
@@ -1170,14 +1177,22 @@ class GalleryPresenter {
       img.height = asset.orientation === 'portrait' ? 1000 : 800;
       img.loading = 'lazy';
       img.decoding = 'async';
+      const describedAlt = img.alt;
       img.onerror = () => {
         img.alt = 'Photograph currently being preserved in archive';
+        // Grid derivative missing: retry once with the full-size WebP
+        if (sourceWebp.srcset !== asset.webpSrc) sourceWebp.srcset = asset.webpSrc;
       };
 
-      if (img.complete) {
+      const markLoaded = () => {
+        img.alt = describedAlt;
         img.classList.add('is-loaded');
+        figure.classList.add('has-image');
+      };
+      if (img.complete && img.naturalWidth) {
+        markLoaded();
       } else {
-        img.addEventListener('load', () => img.classList.add('is-loaded'), { once: true });
+        img.addEventListener('load', markLoaded);
       }
 
       picture.appendChild(sourceWebp);
@@ -1197,6 +1212,8 @@ class GalleryPresenter {
       this.#cursorLoupe?.attachInteractiveTarget(figure, 'INSPECT');
 
       figure.addEventListener('mouseenter', () => this.#lightbox.preload(asset), { passive: true });
+      // Touch has no hover: start fetching the full-size frame as soon as the finger lands
+      figure.addEventListener('pointerdown', () => this.#lightbox.preload(asset), { passive: true });
       const activate = () => this.#lightbox.open(photos, idx, figure);
       figure.addEventListener('click', activate);
       figure.tabIndex = 0;
