@@ -1899,13 +1899,15 @@ class EditorialMotionController {
 class HeroCarouselController {
   // The resting fan (left / centre / right) is three spokes of one large wheel: the side
   // cards sit one "step" (their rest rotation) either side of centre. The wheel turns that
-  // arc slowly left to right; the right card fades out, gets the next photo while hidden,
-  // and fades back in on the left. Paused it is exactly the original fan.
+  // arc left to right at one constant speed. Two steps out on each side is a portal: the
+  // right card sinks back and fades into it, gets the next photo while hidden, and emerges
+  // from the left portal. Paused it is exactly the original fan.
   static #STEP_SECONDS = 5;
-  // In steps from centre: fully shown up to FULL, gone by EDGE, so three cards are always
-  // in view while a fourth fades in on the left or out on the right.
-  static #FULL = 1.2;
-  static #EDGE = 1.8;
+  // In steps from centre: a card is whole up to FULL and fully inside a portal at PORTAL.
+  // PORTAL must be 2 with four cards, so the one leaving on the right and the one arriving
+  // on the left are the same card at the same moment.
+  static #FULL = 1;
+  static #PORTAL = 2;
 
   #repository;
   #transitionCoordinator;
@@ -1924,7 +1926,7 @@ class HeroCarouselController {
   #hovered = false;
   #focused = false;
   #needsMeasure = true;
-  #developFlip = false;
+  #portals = [];
 
   constructor(repository, transitionCoordinator) {
     this.#repository = repository;
@@ -1940,10 +1942,10 @@ class HeroCarouselController {
     if (!left || !center || !right || !extra || this.#pool.length < 4) return;
 
     this.#cards = [
-      { el: extra,  slot: -2, shown: false, interactive: false },
-      { el: left,   slot: -1, shown: true,  interactive: true },
-      { el: center, slot: 0,  shown: true,  interactive: true },
-      { el: right,  slot: 1,  shown: true,  interactive: true },
+      { el: extra,  slot: -2, interactive: false },
+      { el: left,   slot: -1, interactive: true },
+      { el: center, slot: 0,  interactive: true },
+      { el: right,  slot: 1,  interactive: true },
     ];
     this.#nextPoolIdx = 4 % this.#pool.length;
     this.#preload(this.#pool[this.#nextPoolIdx]);
@@ -1974,6 +1976,14 @@ class HeroCarouselController {
 
   #start() {
     this.#deck.classList.add('is-turning');
+    // Portals are decoration that only exists while the wheel turns
+    this.#portals = [-1, 1].map(side => {
+      const el = document.createElement('span');
+      el.className = 'hero-portal';
+      el.setAttribute('aria-hidden', 'true');
+      this.#deck.appendChild(el);
+      return { el, side };
+    });
     this.#deck.addEventListener('pointerenter', () => { this.#hovered = true; });
     this.#deck.addEventListener('pointerleave', () => { this.#hovered = false; this.#wake(); });
     // Tabbing onto a card pauses the wheel so keyboard users can read and open it. Focus the
@@ -2022,7 +2032,9 @@ class HeroCarouselController {
       this.#phase += (rest - this.#phase) * Math.min(1, dt * 5);
       if (Math.abs(rest - this.#phase) < 0.0015) this.#phase = rest;
     } else {
-      this.#speed += (1 - this.#speed) * Math.min(1, dt * 2);
+      // Back to full speed within about half a second, then it never varies
+      this.#speed += (1 - this.#speed) * Math.min(1, dt * 6);
+      if (this.#speed > 0.995) this.#speed = 1;
       this.#phase += (this.#speed * dt) / HeroCarouselController.#STEP_SECONDS;
     }
 
@@ -2048,28 +2060,45 @@ class HeroCarouselController {
     const restRot = parseFloat(cs?.getPropertyValue('--card-rest-rot')) || 8;
     this.#stepDeg = restRot;
     this.#radius = restX / Math.sin(restRot * Math.PI / 180);
+    const w = ref?.offsetWidth || 0;
+    const h = ref?.offsetHeight || 0;
+    this.#portals.forEach(({ el }) => {
+      el.style.width = `${w}px`;
+      el.style.height = `${h}px`;
+      el.style.marginLeft = `${-w / 2}px`;
+    });
+  }
+
+  // Position on the arc for a card `steps` spokes from centre
+  #arc(steps) {
+    const deg = steps * this.#stepDeg;
+    const rad = deg * Math.PI / 180;
+    return `translate3d(${(this.#radius * Math.sin(rad)).toFixed(2)}px, ${(this.#radius * (1 - Math.cos(rad))).toFixed(2)}px, 0) rotate(${deg.toFixed(3)}deg)`;
+  }
+
+  static #smooth(t) {
+    const c = Math.min(1, Math.max(0, t));
+    return c * c * (3 - 2 * c);
   }
 
   #render() {
     if (this.#needsMeasure) this.#measure();
     const full = HeroCarouselController.#FULL;
-    const edge = HeroCarouselController.#EDGE;
+    const portal = HeroCarouselController.#PORTAL;
+    const smooth = HeroCarouselController.#smooth;
+    let glow = 0;
     this.#cards.forEach(card => {
       const steps = card.slot + this.#phase;
-      // Past the outer resting spokes a card slows as it fades, so arrivals and departures
-      // stay inside the deck's column instead of drifting over the hero text.
-      const reachRaw = Math.abs(steps);
-      const travel = reachRaw <= 1 ? steps : Math.sign(steps) * (1 + (reachRaw - 1) * 0.45);
-      const deg = travel * this.#stepDeg;
-      const rad = deg * Math.PI / 180;
-      const x = this.#radius * Math.sin(rad);
-      const y = this.#radius * (1 - Math.cos(rad));
-      const reach = Math.abs(steps);
-      let opacity = reach <= full ? 1 : Math.max(0, 1 - (reach - full) / (edge - full));
-      opacity = opacity * opacity * (3 - 2 * opacity);
+      // The arc speed never changes. Near a portal the card sinks back (a slight uniform
+      // shrink) and fades into the glow, which also keeps it off the hero text.
+      const into = smooth((Math.abs(steps) - full) / (portal - full));
+      const scale = 1 - 0.4 * into;
+      const opacity = 1 - into;
+      // Each portal is brightest while a card is half-way through it
+      if (into > 0 && into < 1) glow = Math.max(glow, Math.sin(Math.PI * into));
 
       const el = card.el;
-      el.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) rotate(${deg.toFixed(3)}deg)`;
+      el.style.transform = `${this.#arc(steps)} scale(${scale.toFixed(3)})`;
       el.style.opacity = opacity.toFixed(3);
       const z = String(20 + Math.round(steps * 4));
       if (el.style.zIndex !== z) el.style.zIndex = z;
@@ -2082,19 +2111,13 @@ class HeroCarouselController {
         el.setAttribute('aria-hidden', interactive ? 'false' : 'true');
         el.style.pointerEvents = interactive ? '' : 'none';
       }
-      const shown = opacity > 0.02;
-      if (shown !== card.shown) {
-        card.shown = shown;
-        if (shown) this.#develop(el);
-      }
     });
-  }
-
-  // Signature "print develops" sheet replays on each newly arriving photo
-  #develop(el) {
-    this.#developFlip = !this.#developFlip;
-    el.classList.remove('develop-a', 'develop-b');
-    el.classList.add(this.#developFlip ? 'develop-a' : 'develop-b');
+    // Cards leave on the right exactly as they arrive on the left, so both portals share
+    // one glow; it rests at zero whenever the fan is at rest.
+    this.#portals.forEach(({ el, side }) => {
+      el.style.transform = this.#arc(side * portal);
+      el.style.opacity = (0.85 * glow).toFixed(3);
+    });
   }
 
   #assignNextPhoto(el) {

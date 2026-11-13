@@ -1166,24 +1166,20 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   z-index: 60 !important;
 }
 
-/* Each newly arriving photo replays the signature "print develops" sheet; two identical
-   keyframe names alternate so the animation restarts every time. */
-.hero-card.develop-a .hero-monument-mat picture::after {
-  animation: printDevelopA 0.9s var(--motion-ease-cinematic) both;
-}
-
-.hero-card.develop-b .hero-monument-mat picture::after {
-  animation: printDevelopB 0.9s var(--motion-ease-cinematic) both;
-}
-
-@keyframes printDevelopA {
-  from { transform: scaleY(1); }
-  to   { transform: scaleY(0); }
-}
-
-@keyframes printDevelopB {
-  from { transform: scaleY(1); }
-  to   { transform: scaleY(0); }
+/* The two portals at the ends of the wheel's arc: a soft bronze light behind the cards that
+   a card fades into on the right and emerges from on the left. JS sizes and places each
+   one where a card disappears, and drives only its opacity. */
+.hero-portal {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform-origin: 50% 110%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 50% 50% at center,
+    color-mix(in srgb, var(--accent-bronze) 30%, transparent) 0%,
+    transparent 100%);
 }
 
 /* Stable Hover & Focus: outer figure keeps its stationary hit-box while inner mat lifts smoothly */
@@ -1244,17 +1240,18 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
 }
 
 /* Small desktop (960px - 1199px): the showcase column is too narrow for the full fan,
-   so the right card would run past the viewport edge. */
+   so the right card would run past the viewport edge, and cards arriving on the hero
+   wheel's left would cross the tagline. */
 @media (min-width: 960px) and (max-width: 1199px) {
   .hero-card {
-    width: 200px;
-    margin-left: -100px;
+    width: 188px;
+    margin-left: -94px;
   }
   .hero-card-left {
-    --card-rest-x: -108px;
+    --card-rest-x: -102px;
   }
   .hero-card-right {
-    --card-rest-x: 108px;
+    --card-rest-x: 102px;
   }
 }
 
