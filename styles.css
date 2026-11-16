@@ -3070,6 +3070,17 @@ html[data-theme="dark"] .photo-item img {
   animation-delay: 0.32s;
 }
 
+/* The one booking path: opens the EYSI CLICKS Facebook Page */
+.packages-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-2xl);
+}
+
+#packages.is-in-view .packages-cta {
+  animation: cardRise 0.6s var(--motion-ease-cinematic) 0.42s backwards;
+}
+
 html[data-theme="dark"] .package-card {
   box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
 }
@@ -3607,6 +3618,7 @@ footer .ft-sub {
   .story-head .story-title,
   .story-head .story-count,
   .package-card,
+  .packages-cta,
   .lightbox-picture {
     opacity: 1;
     animation: none !important;
