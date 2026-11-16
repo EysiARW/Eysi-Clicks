@@ -70,6 +70,8 @@
       #panel-events::before { content: "Events"; }
       #panel-institutional::before { content: "Institutional"; }
       .photo-item img { opacity: 1; }
+      .about-img, .about-text .section-title, .about-role, .about-bio { opacity: 1; transform: none; }
+      .about-img picture::after { display: none; }
     </style>
   </noscript>
 
@@ -99,18 +101,6 @@
 
   <a href="#gallery" class="skip-link">Skip to Gallery</a>
 
-  <!-- Bang Motion Directional SVG Motion Blur Bank (techniques.md §2 & §10) -->
-  <svg width="0" height="0" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none">
-    <defs>
-      <filter id="bm-blur-y" x="-70%" y="-70%" width="240%" height="240%">
-        <feGaussianBlur id="bm-blur-y-node" in="SourceGraphic" stdDeviation="0 0"></feGaussianBlur>
-      </filter>
-      <filter id="bm-blur-x" x="-70%" y="-70%" width="240%" height="240%">
-        <feGaussianBlur id="bm-blur-x-node" in="SourceGraphic" stdDeviation="0 0"></feGaussianBlur>
-      </filter>
-    </defs>
-  </svg>
-
   <div class="grain" aria-hidden="true"></div>
 
   <nav id="navbar" aria-label="Primary">
@@ -127,6 +117,7 @@
         <li><a href="#hero" class="nav-link active" data-section="hero">Home</a></li>
         <li><a href="#about" class="nav-link" data-section="about">About</a></li>
         <li><a href="#gallery" class="nav-link" data-section="gallery">Work</a></li>
+        <li><a href="#packages" class="nav-link" data-section="packages">Rates</a></li>
       </ul>
 
       <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch to dark mode" title="Toggle daylight / dark mode">
@@ -147,11 +138,7 @@
 
   <section id="hero">
 
-    <div class="hero-glow" aria-hidden="true">
-      <i class="bm-blob bm-blob-1"></i>
-      <i class="bm-blob bm-blob-2"></i>
-      <i class="bm-light-sweep"></i>
-    </div>
+    <div class="hero-glow" aria-hidden="true"></div>
 
     <div class="hero-inner">
       <div class="hero-content">
@@ -467,11 +454,7 @@
         <h3 class="package-name">Photo Coverage</h3>
         <p class="package-price"><span class="package-currency">₱</span>3,000</p>
         <ul class="package-list">
-          <li>Full coverage</li>
-          <li>Unlimited photos</li>
           <li>1 photographer</li>
-          <li>Photos delivered in 7 to 10 days via Google Drive</li>
-          <li>Edited photos only, no RAW files</li>
         </ul>
       </article>
 
@@ -479,14 +462,20 @@
         <h3 class="package-name">Photo &amp; Video Coverage</h3>
         <p class="package-price"><span class="package-currency">₱</span>10,000</p>
         <ul class="package-list">
-          <li>Full coverage</li>
-          <li>Unlimited photos</li>
-          <li>1 video highlight</li>
           <li>1 photographer, plus 1 videographer &amp; editor</li>
-          <li>Photos and video delivered in 7 to 10 days via Google Drive</li>
-          <li>Edited files only, no RAW files</li>
+          <li>1 video highlight</li>
         </ul>
       </article>
+    </div>
+
+    <div class="packages-shared">
+      <h3 class="packages-shared-title">Both packages include</h3>
+      <ul class="packages-shared-list">
+        <li>Full coverage</li>
+        <li>Unlimited photos</li>
+        <li>Delivered in 7 to 10 days via Google Drive</li>
+        <li>Edited files only, no RAW files</li>
+      </ul>
     </div>
 
     <div class="packages-cta">

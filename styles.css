@@ -386,6 +386,10 @@ html[data-theme="dark"] .hero-logo {
   animation: navFadeDown 0.36s var(--motion-ease-cinematic) calc(var(--motion-delay-nav) + 160ms) backwards;
 }
 
+.nav-links li:nth-child(4) {
+  animation: navFadeDown 0.36s var(--motion-ease-cinematic) calc(var(--motion-delay-nav) + 210ms) backwards;
+}
+
 .nav-links a {
   position: relative;
   font-family: var(--font-interphases);
@@ -524,62 +528,6 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   pointer-events: none;
   overflow: hidden;
   animation: glowFade 0.40s var(--motion-ease-subtle) var(--motion-delay-bg) backwards;
-}
-
-.bm-blob {
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  will-change: transform;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-.bm-blob-1 {
-  width: min(680px, 78vw);
-  height: min(680px, 78vw);
-  left: -10%;
-  top: -14%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent-bronze) 18%, transparent) 0%, color-mix(in srgb, var(--accent-bronze) 6%, transparent) 42%, transparent 72%);
-  animation: bmBlobDriftA 14s ease-in-out infinite alternate;
-}
-
-.bm-blob-2 {
-  width: min(620px, 74vw);
-  height: min(620px, 74vw);
-  right: -8%;
-  bottom: -16%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent-bronze) 14%, transparent) 0%, color-mix(in srgb, var(--accent-bronze) 5%, transparent) 42%, transparent 70%);
-  animation: bmBlobDriftB 17s ease-in-out infinite alternate;
-}
-
-.bm-light-sweep {
-  position: absolute;
-  top: -25%;
-  left: -35%;
-  width: 60%;
-  height: 150%;
-  background: linear-gradient(105deg, transparent 10%, color-mix(in srgb, var(--accent-bronze) 10%, transparent) 50%, transparent 90%);
-  transform: translate3d(-40%, 0, 0) rotate(-12deg);
-  opacity: 0;
-  will-change: transform, opacity;
-  animation: bmLightSweep 2.2s cubic-bezier(0.22, 1, 0.36, 1) 0.32s forwards;
-}
-
-@keyframes bmBlobDriftA {
-  0%   { transform: translate3d(0, 0, 0) scale(1); }
-  100% { transform: translate3d(54px, -36px, 0) scale(1.06); }
-}
-
-@keyframes bmBlobDriftB {
-  0%   { transform: translate3d(0, 0, 0) scale(1); }
-  100% { transform: translate3d(-48px, 32px, 0) scale(1.05); }
-}
-
-@keyframes bmLightSweep {
-  0%   { opacity: 0; transform: translate3d(-35%, -8%, 0) rotate(-12deg); }
-  38%  { opacity: 0.85; }
-  100% { opacity: 0; transform: translate3d(185%, 10%, 0) rotate(-12deg); }
 }
 
 .hero-inner {
@@ -1087,6 +1035,54 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   width: 100%;
 }
 
+/* Pause / play for the turning deck, created by HeroCarouselController; sits at the end of
+   the "Cabuyao, Laguna" row so it adds no height to the hero */
+.hero-showcase {
+  position: relative;
+}
+
+.hero-wheel-toggle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 70;
+  width: var(--control-height);
+  height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  animation: heroFadeUp 0.5s var(--motion-ease-cinematic) 0.2s forwards;
+  transition: color 0.25s var(--shutter-ease), border-color 0.25s var(--shutter-ease);
+}
+
+.hero-wheel-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.hero-wheel-toggle .icon-play,
+.hero-wheel-toggle.is-paused .icon-pause {
+  display: none;
+}
+
+.hero-wheel-toggle.is-paused .icon-play {
+  display: block;
+}
+
+@media (hover: hover) {
+  .hero-wheel-toggle:hover {
+    color: var(--text);
+    border-color: var(--text);
+  }
+}
+
 .hero-deck {
   position: relative;
   width: 100%;
@@ -1497,11 +1493,9 @@ html[data-theme="dark"] .hero-monument-mat picture {
   box-shadow: var(--shadow-ambient);
   opacity: 0;
   transform: translateY(20px);
-  clip-path: inset(0 0 6% 0 round var(--radius-mat));
   transition:
     opacity 0.85s var(--motion-ease-cinematic),
     transform 0.85s var(--motion-ease-cinematic),
-    clip-path 0.85s var(--motion-ease-cinematic),
     box-shadow 0.5s var(--shutter-ease),
     border-color 0.3s;
 }
@@ -1509,7 +1503,6 @@ html[data-theme="dark"] .hero-monument-mat picture {
 .about-wrap.is-in-view .about-img {
   opacity: 1;
   transform: translateY(0);
-  clip-path: inset(0 0 0 0 round var(--radius-mat));
 }
 
 @media (hover: hover) {
@@ -1550,8 +1543,26 @@ html[data-theme="dark"] .about-img-inner {
 }
 
 .about-img picture {
+  position: relative;
   display: block;
   width: 100%;
+}
+
+/* The portrait develops like every other print on the site */
+.about-img picture::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--surface-mat);
+  transform: scaleY(1);
+  transform-origin: 50% 0;
+  pointer-events: none;
+}
+
+.about-wrap.is-in-view .about-img picture::after {
+  transform: scaleY(0);
+  transition: transform 0.9s var(--motion-ease-cinematic) 0.35s;
 }
 
 .about-img img {
@@ -2093,19 +2104,56 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
 }
 
 /* Modern CSS Grid Proof Archive Layout */
+/* Two columns up to small laptops, three from 1024px. Each story opens on a lead print:
+   a full row on two columns, a 2 x 2 block beside two smaller prints on three. */
 .photo-grid {
   --gap: clamp(1.75rem, 3.2vw, 2.75rem);
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--gap);
   width: 100%;
 }
 
-@media (max-width: 480px) {
+.photo-item.is-lead {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 1024px) {
   .photo-grid {
-    grid-template-columns: 1fr;
-    --gap: 1.75rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .photo-item.is-lead {
+    grid-column: span 2;
+    grid-row: span 2;
+    justify-content: center;
+  }
+}
+
+/* Phones: a tighter mat so two prints per row still read as photographs */
+@media (max-width: 599px) {
+  .photo-grid {
+    --gap: var(--space-sm);
+  }
+
+  .photo-grid .photo-item,
+  .photo-grid .story-head ~ .photo-item {
+    padding: var(--space-xs);
+  }
+
+  .photo-grid .photo-item.is-lead,
+  .photo-grid .story-head ~ .photo-item.is-lead {
+    padding: var(--space-sm);
+  }
+}
+
+.photo-item.is-folded {
+  display: none;
+}
+
+.story-more {
+  grid-column: 1 / -1;
+  justify-self: center;
 }
 
 /* Story headers: one per shoot, spanning the full grid row so each story starts on a new line. */
@@ -2692,7 +2740,9 @@ html[data-theme="dark"] .photo-item img {
   height: auto;
   max-width: calc(100vw - 11rem);
   max-height: 67vh;
-  max-height: 67dvh;
+  /* Everything the top bar, mat, caption and filmstrip leave free, so taller screens get a
+     larger print; never smaller than before */
+  max-height: max(67dvh, calc(100dvh - 17.5rem));
   object-fit: contain;
   border-radius: 1px;
   will-change: transform, opacity;
@@ -2938,7 +2988,7 @@ html[data-theme="dark"] .photo-item img {
   .lightbox-img {
     max-width: calc(92vw - 36px);
     max-height: 62vh;
-    max-height: 62dvh;
+    max-height: max(62dvh, calc(100dvh - 19rem));
   }
   .lightbox-nav {
     position: static;
@@ -2979,7 +3029,7 @@ html[data-theme="dark"] .photo-item img {
   .lightbox-img {
     max-width: calc(94vw - 20px);
     max-height: 58vh;
-    max-height: 58dvh;
+    max-height: max(58dvh, calc(100dvh - 18rem));
   }
   .filmstrip-thumb {
     width: 34px;
@@ -3078,7 +3128,7 @@ html[data-theme="dark"] .photo-item img {
 }
 
 #packages.is-in-view .packages-cta {
-  animation: cardRise 0.6s var(--motion-ease-cinematic) 0.42s backwards;
+  animation: cardRise 0.6s var(--motion-ease-cinematic) 0.46s backwards;
 }
 
 html[data-theme="dark"] .package-card {
@@ -3125,6 +3175,59 @@ html[data-theme="dark"] .package-card {
   font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--text-muted);
+}
+
+/* What both packages share, said once under the cards instead of repeated in each */
+.packages-shared {
+  max-width: 920px;
+  margin: var(--space-xl) auto 0;
+  text-align: center;
+}
+
+.packages-shared-title {
+  font-family: var(--font-interphases);
+  font-size: var(--fs-eyebrow);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.packages-shared-list {
+  list-style: none;
+  margin-top: var(--space-sm);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2xs) var(--space-md);
+}
+
+.packages-shared-list li {
+  font-family: var(--font-interphases);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.packages-shared-list li + li::before {
+  content: '·';
+  margin-right: var(--space-md);
+  color: var(--text-subtle);
+}
+
+@media (max-width: 599px) {
+  .packages-shared-list {
+    flex-direction: column;
+  }
+
+  .packages-shared-list li + li::before {
+    content: none;
+  }
+}
+
+#packages.is-in-view .packages-shared {
+  animation: cardRise 0.6s var(--motion-ease-cinematic) 0.38s backwards;
 }
 
 
@@ -3499,6 +3602,16 @@ footer .ft-sub {
   }
 }
 
+/* Four nav links plus the theme toggle: tighter link spacing so 351-400px phones still fit */
+@media (max-width: 400px) {
+  .nav-links {
+    gap: 0.35rem;
+  }
+  .nav-links a {
+    padding: 0.4rem 0.2rem;
+  }
+}
+
 /* Ultra-Compact Phone Hardening (<= 350px e.g. iPhone SE 1st Gen 320px) */
 @media (max-width: 350px) {
   .nav-actions {
@@ -3551,8 +3664,6 @@ footer .ft-sub {
   nav.nav-hidden,
   .grain,
   .hero-glow,
-  .bm-blob,
-  .bm-light-sweep,
   .hero-logo,
   .hero-eyebrow,
   .hero-title,
@@ -3611,13 +3722,15 @@ footer .ft-sub {
   }
 
   .photo-item .photo-frame::after,
-  .hero-monument-mat picture::after {
+  .hero-monument-mat picture::after,
+  .about-img picture::after {
     display: none;
   }
 
   .story-head .story-title,
   .story-head .story-count,
   .package-card,
+  .packages-shared,
   .packages-cta,
   .lightbox-picture {
     opacity: 1;
