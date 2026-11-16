@@ -262,7 +262,6 @@ class PortfolioRepository {
 
 class ViewTransitionCoordinator {
   #reducedMotionQuery;
-  #blurRafIds = new Map();
 
   constructor() {
     this.#reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -270,47 +269,6 @@ class ViewTransitionCoordinator {
 
   get prefersReducedMotion() {
     return this.#reducedMotionQuery.matches;
-  }
-
-  pulseDirectionalBlur(targetEl, axis = 'y', peak = 18, durationMs = 420) {
-    if (!targetEl || this.prefersReducedMotion || typeof requestAnimationFrame !== 'function') return;
-    const filterId = axis === 'x' ? 'bm-blur-x' : 'bm-blur-y';
-    const nodeId   = axis === 'x' ? 'bm-blur-x-node' : 'bm-blur-y-node';
-    const blurNode = document.getElementById(nodeId);
-    if (!blurNode) return;
-
-    const prev = this.#blurRafIds.get(axis);
-    if (prev) {
-      cancelAnimationFrame(prev.rafId);
-      if (prev.blurNode) prev.blurNode.setAttribute('stdDeviation', '0 0');
-      if (prev.targetEl && prev.targetEl.style) prev.targetEl.style.filter = '';
-      this.#blurRafIds.delete(axis);
-    }
-
-    const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    targetEl.style.filter = `url(#${filterId})`;
-
-    const step = (now) => {
-      const current = typeof now === 'number' ? now : Date.now();
-      const progress = Math.min(1, Math.max(0, (current - startTime) / durationMs));
-      // Power4-like ease-out decay from peak -> 0 (Bang Motion techniques.md §2)
-      const eased = Math.pow(1 - progress, 3);
-      const mainVal = (peak * eased).toFixed(2);
-      const crossVal = (peak * eased * 0.08).toFixed(2);
-      blurNode.setAttribute('stdDeviation', axis === 'x' ? `${mainVal} ${crossVal}` : `${crossVal} ${mainVal}`);
-
-      if (progress < 1) {
-        const rafId = requestAnimationFrame(step);
-        this.#blurRafIds.set(axis, { rafId, targetEl, blurNode });
-      } else {
-        blurNode.setAttribute('stdDeviation', '0 0');
-        targetEl.style.filter = '';
-        this.#blurRafIds.delete(axis);
-      }
-    };
-
-    const initialRafId = requestAnimationFrame(step);
-    this.#blurRafIds.set(axis, { rafId: initialRafId, targetEl, blurNode });
   }
 
   run(mutationCallback, afterCallback = null) {
@@ -1278,7 +1236,6 @@ class GalleryPresenter {
       document.querySelectorAll('.cat-panel').forEach(panel => {
         panel.classList.remove('active');
         panel.removeAttribute('data-whip-dir');
-        if (panel.style) panel.style.filter = '';
       });
 
       const panel = document.getElementById('panel-' + cat);
@@ -1353,6 +1310,12 @@ class GalleryPresenter {
     }, { threshold: 0.08, rootMargin: '0px 0px 40px 0px' });
   }
 
+  // Story layout: leads need a story of at least 3; stories over 11 show 9 (fills the rows
+  // on both the 3-column desktop and the 2-column phone grid) until "Show all" is pressed.
+  static #LEAD_MIN = 3;
+  static #FOLD_OVER = 11;
+  static #FOLD_SHOWN = 9;
+
   #buildStoryHeader(title, count, isFirst) {
     const header = document.createElement('div');
     header.className = isFirst ? 'story-head is-first' : 'story-head';
@@ -1383,11 +1346,15 @@ class GalleryPresenter {
       storyCounts.set(key, (storyCounts.get(key) || 0) + 1);
     });
     let currentStory = null;
+    let posInStory = 0;
+    let folded = [];
 
     photos.forEach((asset, idx) => {
       const storyKey = PortfolioRepository.storyKey(asset);
+      const storySize = storyCounts.get(storyKey);
       if (storyKey !== currentStory) {
         currentStory = storyKey;
+        posInStory = 0;
         const header = this.#buildStoryHeader(asset.caption, storyCounts.get(storyKey), idx === 0);
         if (this.#revealObserver && !this.#transitionCoordinator.prefersReducedMotion) {
           this.#revealObserver.observe(header);
@@ -1399,6 +1366,14 @@ class GalleryPresenter {
 
       const figure = document.createElement('figure');
       figure.className = 'photo-item';
+      // A story of three or more opens on one large lead print
+      if (posInStory === 0 && storySize >= GalleryPresenter.#LEAD_MIN) figure.classList.add('is-lead');
+      // Very long stories show their first rows and fold the rest behind "Show all"
+      if (storySize > GalleryPresenter.#FOLD_OVER && posInStory >= GalleryPresenter.#FOLD_SHOWN) {
+        figure.classList.add('is-folded');
+        folded.push(figure);
+      }
+      posInStory += 1;
 
       if (!this.#revealObserver || this.#transitionCoordinator.prefersReducedMotion) {
         figure.classList.add('is-revealed');
@@ -1472,7 +1447,25 @@ class GalleryPresenter {
       });
 
       grid.appendChild(figure);
+
+      if (folded.length && posInStory === storySize) {
+        grid.appendChild(this.#buildStoryMore(folded, storySize));
+        folded = [];
+      }
     });
+  }
+
+  #buildStoryMore(folded, total) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'story-more btn-editorial btn-editorial-secondary';
+    more.textContent = `Show all ${total} photos`;
+    more.addEventListener('click', () => {
+      folded.forEach(fig => fig.classList.remove('is-folded'));
+      folded[0]?.focus({ preventScroll: true });
+      more.remove();
+    });
+    return more;
   }
 
   #bindControls() {
@@ -1728,11 +1721,6 @@ class EditorialMotionController {
       heroCharIdx = this.#splitCharacters(wordEl, heroCharIdx);
     });
 
-    const heroTitle = document.querySelector('.hero-title');
-    if (heroTitle) {
-      this.#transitionCoordinator?.pulseDirectionalBlur(heroTitle, 'y', 22, 680);
-    }
-
     const taglineEl = document.querySelector('.hero-tagline');
     if (taglineEl) {
       this.#splitWordsPreservingHighlights(taglineEl);
@@ -1850,12 +1838,8 @@ class EditorialMotionController {
         if (entry.isIntersecting) {
           if (entry.target === this.#aboutSection) {
             if (this.#aboutWrap) this.#aboutWrap.classList.add('is-in-view');
-            const aboutTitle = this.#aboutSection.querySelector('.section-title');
-            if (aboutTitle) this.#transitionCoordinator?.pulseDirectionalBlur(aboutTitle, 'x', 18, 520);
           } else if (entry.target === this.#gallerySection) {
             entry.target.classList.add('is-in-view');
-            const galTitle = this.#gallerySection.querySelector('.section-title');
-            if (galTitle) this.#transitionCoordinator?.pulseDirectionalBlur(galTitle, 'y', 16, 480);
           } else if (entry.target === this.#packagesSection) {
             entry.target.classList.add('is-in-view');
           } else if (entry.target === this.#footerSection) {
@@ -1942,6 +1926,8 @@ class HeroCarouselController {
   #inView = true;
   #hovered = false;
   #focused = false;
+  #userPaused = false;
+  #toggleBtn = null;
   #needsMeasure = true;
   #portals = [];
 
@@ -2013,6 +1999,7 @@ class HeroCarouselController {
     this.#deck.addEventListener('focusout', () => { this.#focused = false; this.#wake(); });
     window.addEventListener('resize', () => { this.#needsMeasure = true; }, { passive: true });
     document.addEventListener('visibilitychange', () => this.#wake());
+    this.#buildToggle();
 
     if (typeof IntersectionObserver === 'function') {
       new IntersectionObserver(entries => {
@@ -2022,6 +2009,33 @@ class HeroCarouselController {
     }
     this.#render();
     this.#wake();
+  }
+
+  // Moving content that runs on its own needs a way to stop it (WCAG 2.2.2): hover and
+  // focus pause it for a moment, this button stops it until pressed again.
+  #buildToggle() {
+    const showcase = this.#deck.closest('.hero-showcase');
+    if (!showcase) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'hero-wheel-toggle';
+    btn.innerHTML = '<svg class="icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M9 6v12M15 6v12" stroke-linecap="round"></path></svg>'
+      + '<svg class="icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" stroke-linejoin="round"></path></svg>';
+    btn.addEventListener('click', () => {
+      this.#userPaused = !this.#userPaused;
+      this.#syncToggle();
+      this.#wake();
+    });
+    showcase.appendChild(btn);
+    this.#toggleBtn = btn;
+    this.#syncToggle();
+  }
+
+  #syncToggle() {
+    const btn = this.#toggleBtn;
+    if (!btn) return;
+    btn.classList.toggle('is-paused', this.#userPaused);
+    btn.setAttribute('aria-label', this.#userPaused ? 'Play the photo wheel' : 'Pause the photo wheel');
   }
 
   // Runs the frame loop only while the deck is on screen and the tab is visible
@@ -2040,7 +2054,8 @@ class HeroCarouselController {
     // Under the pointer, on keyboard focus, or behind the lightbox the wheel stops — but first
     // glides to the nearest resting fan, so a pause never freezes a card half-faded. The
     // target keeps any focused card on the visible side.
-    const paused = this.#hovered || this.#focused || this.#lightboxEl?.classList.contains('open');
+    const paused = this.#userPaused || this.#hovered || this.#focused
+      || this.#lightboxEl?.classList.contains('open');
     if (paused) {
       this.#speed = 0;
       let rest = this.#phase < 0.5 ? 0 : 1;
@@ -2048,6 +2063,11 @@ class HeroCarouselController {
       if (held && Math.abs(held.slot + rest) > 1) rest = 1 - rest;
       this.#phase += (rest - this.#phase) * Math.min(1, dt * 5);
       if (Math.abs(rest - this.#phase) < 0.0015) this.#phase = rest;
+      // Stopped by the button and settled: no need to keep drawing until it is pressed again
+      if (this.#userPaused && this.#phase === rest) {
+        this.#render();
+        return;
+      }
     } else {
       // Back to full speed within about half a second, then it never varies
       this.#speed += (1 - this.#speed) * Math.min(1, dt * 6);
