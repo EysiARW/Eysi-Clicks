@@ -1926,8 +1926,6 @@ class HeroCarouselController {
   #inView = true;
   #hovered = false;
   #focused = false;
-  #userPaused = false;
-  #toggleBtn = null;
   #needsMeasure = true;
   #portals = [];
 
@@ -1999,7 +1997,6 @@ class HeroCarouselController {
     this.#deck.addEventListener('focusout', () => { this.#focused = false; this.#wake(); });
     window.addEventListener('resize', () => { this.#needsMeasure = true; }, { passive: true });
     document.addEventListener('visibilitychange', () => this.#wake());
-    this.#buildToggle();
 
     if (typeof IntersectionObserver === 'function') {
       new IntersectionObserver(entries => {
@@ -2009,33 +2006,6 @@ class HeroCarouselController {
     }
     this.#render();
     this.#wake();
-  }
-
-  // Moving content that runs on its own needs a way to stop it (WCAG 2.2.2): hover and
-  // focus pause it for a moment, this button stops it until pressed again.
-  #buildToggle() {
-    const showcase = this.#deck.closest('.hero-showcase');
-    if (!showcase) return;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'hero-wheel-toggle';
-    btn.innerHTML = '<svg class="icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M9 6v12M15 6v12" stroke-linecap="round"></path></svg>'
-      + '<svg class="icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" stroke-linejoin="round"></path></svg>';
-    btn.addEventListener('click', () => {
-      this.#userPaused = !this.#userPaused;
-      this.#syncToggle();
-      this.#wake();
-    });
-    showcase.appendChild(btn);
-    this.#toggleBtn = btn;
-    this.#syncToggle();
-  }
-
-  #syncToggle() {
-    const btn = this.#toggleBtn;
-    if (!btn) return;
-    btn.classList.toggle('is-paused', this.#userPaused);
-    btn.setAttribute('aria-label', this.#userPaused ? 'Play the photo wheel' : 'Pause the photo wheel');
   }
 
   // Runs the frame loop only while the deck is on screen and the tab is visible
@@ -2054,8 +2024,7 @@ class HeroCarouselController {
     // Under the pointer, on keyboard focus, or behind the lightbox the wheel stops — but first
     // glides to the nearest resting fan, so a pause never freezes a card half-faded. The
     // target keeps any focused card on the visible side.
-    const paused = this.#userPaused || this.#hovered || this.#focused
-      || this.#lightboxEl?.classList.contains('open');
+    const paused = this.#hovered || this.#focused || this.#lightboxEl?.classList.contains('open');
     if (paused) {
       this.#speed = 0;
       let rest = this.#phase < 0.5 ? 0 : 1;
@@ -2063,11 +2032,6 @@ class HeroCarouselController {
       if (held && Math.abs(held.slot + rest) > 1) rest = 1 - rest;
       this.#phase += (rest - this.#phase) * Math.min(1, dt * 5);
       if (Math.abs(rest - this.#phase) < 0.0015) this.#phase = rest;
-      // Stopped by the button and settled: no need to keep drawing until it is pressed again
-      if (this.#userPaused && this.#phase === rest) {
-        this.#render();
-        return;
-      }
     } else {
       // Back to full speed within about half a second, then it never varies
       this.#speed += (1 - this.#speed) * Math.min(1, dt * 6);
