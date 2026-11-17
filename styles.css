@@ -2186,6 +2186,12 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
   display: none;
 }
 
+/* While a story unfolds or folds, GSAP's Flip moves the button and the rows after it;
+   their own transform transitions would lag behind the tween */
+.photo-grid.is-flipping > * {
+  transition: none !important;
+}
+
 .story-more {
   grid-column: 1 / -1;
   justify-self: center;
@@ -3310,6 +3316,13 @@ html[data-theme="dark"] .package-card {
 
 #closing.is-in-view .closing-note {
   animation-delay: 0.4s;
+}
+
+/* With GSAP the tagline's words are tied to the scroll position (ScrollMotionController),
+   so the timed entrance and underline draw step aside */
+#closing.has-scrub .closing-line,
+#closing.has-scrub .closing-line .bm-hl.under i {
+  animation: none;
 }
 
 

@@ -468,6 +468,15 @@ class LightboxController {
   #activeSourceFigure = null;
   #preloadCache = new Map();
   #flightToken = 0;
+  // GSAP is optional: without it (or with reduced motion) swipes and pans keep their plain behaviour
+  #gsap = (typeof window !== 'undefined' && window.gsap) || null;
+  #pictureEl = null;
+  #panVelX = 0;
+  #panVelY = 0;
+  #panLastX = 0;
+  #panLastY = 0;
+  #panLastT = 0;
+  #panGlide = null;
   #kenBurnsFlip = false;
   #chromeTimer = null;
 
@@ -619,6 +628,7 @@ class LightboxController {
   close() {
     if (!this.#lightboxEl || !this.isOpen) return;
     this.#flightToken++;
+    this.#settleSwipe();
     if (!this.#isZoomed) this.#flyOut();
     this.#lightboxEl.classList.remove('flip-open', 'is-flying');
     this.stopSlideshow();
@@ -646,8 +656,9 @@ class LightboxController {
     }
   }
 
-  navigate(dir) {
+  navigate(dir, { animate = true } = {}) {
     if (!this.#images.length) return;
+    if (animate) this.#settleSwipe();
     if (this.#state === LightboxState.ZOOMED || this.#isZoomed) {
       this.#resetZoom();
       this.#state = LightboxState.VIEWING;
@@ -655,9 +666,106 @@ class LightboxController {
       this.#restartSlideshowTimer();
     }
     this.#currentIndex = (this.#currentIndex + dir + this.#images.length) % this.#images.length;
-    this.#triggerFrameCrossfade(dir >= 0 ? 'next' : 'prev');
+    if (animate) this.#triggerFrameCrossfade(dir >= 0 ? 'next' : 'prev');
     this.#nextKenBurns();
     this.#updateView();
+  }
+
+  // ── Finger-following swipe (GSAP) ──
+  // The print slides inside its mat with the finger. Past a short distance or a quick flick
+  // it leaves and the next one arrives from the other side; otherwise it settles back.
+  #canFollowSwipe() {
+    if (!this.#gsap || this.#isZoomed || this.#images.length < 2
+      || this.#transitionCoordinator.prefersReducedMotion) return false;
+    this.#pictureEl ??= this.#lightboxEl?.querySelector('.lightbox-picture') || null;
+    // The slideshow's push-in animates this same element
+    return Boolean(this.#pictureEl) && !this.#pictureEl.getAttribute('data-kb');
+  }
+
+  #settleSwipe() {
+    if (!this.#gsap || !this.#pictureEl) return;
+    this.#gsap.killTweensOf(this.#pictureEl);
+    this.#gsap.set(this.#pictureEl, { clearProps: 'transform,opacity' });
+  }
+
+  #finishSwipe(deltaX, velocityX) {
+    const gsap = this.#gsap;
+    const el = this.#pictureEl;
+    const width = el.offsetWidth || 320;
+    const flick = Math.abs(velocityX) > 0.45 && Math.sign(velocityX) === Math.sign(deltaX);
+    if (Math.abs(deltaX) < Math.max(45, Math.min(90, width * 0.22)) && !flick) {
+      gsap.to(el, { x: 0, duration: 0.32, ease: 'power3.out', clearProps: 'transform' });
+      return;
+    }
+    const side = Math.sign(deltaX);
+    gsap.to(el, {
+      x: side * width,
+      duration: 0.16,
+      ease: 'power2.in',
+      onComplete: () => {
+        this.navigate(side < 0 ? 1 : -1, { animate: false });
+        gsap.fromTo(el,
+          { x: -side * width * 0.4, opacity: 0.6 },
+          { x: 0, opacity: 1, duration: 0.36, ease: 'power3.out', clearProps: 'transform,opacity' });
+      }
+    });
+  }
+
+  // ── Zoom pan momentum (GSAP) ──
+  #applyPan() {
+    if (this.#imgEl) {
+      this.#imgEl.style.transform = `scale(1.85) translate3d(${this.#panX / 1.85}px, ${this.#panY / 1.85}px, 0)`;
+    }
+  }
+
+  #beginPanTracking(x, y) {
+    this.#panGlide?.kill();
+    this.#panGlide = null;
+    this.#panVelX = 0;
+    this.#panVelY = 0;
+    this.#panLastX = x;
+    this.#panLastY = y;
+    this.#panLastT = Date.now();
+  }
+
+  #trackPan(x, y) {
+    const now = Date.now();
+    const dt = now - this.#panLastT;
+    if (dt <= 0) return;
+    // Smoothed px/ms, so one jittery sample does not decide the throw
+    this.#panVelX = 0.7 * ((x - this.#panLastX) / dt) + 0.3 * this.#panVelX;
+    this.#panVelY = 0.7 * ((y - this.#panLastY) / dt) + 0.3 * this.#panVelY;
+    this.#panLastX = x;
+    this.#panLastY = y;
+    this.#panLastT = now;
+  }
+
+  // Returns true when the photo keeps gliding (the caller then leaves `is-panning` on,
+  // because that class switches off the CSS transition that would fight the tween)
+  #glidePan() {
+    const stale = Date.now() - this.#panLastT > 80;
+    const speed = Math.hypot(this.#panVelX, this.#panVelY);
+    if (!this.#gsap || !this.#isZoomed || stale || speed < 0.15
+      || this.#transitionCoordinator.prefersReducedMotion) return false;
+    const { maxX, maxY } = this.#getPanBounds();
+    const clamp = (v, max) => Math.max(-max, Math.min(max, v));
+    const proxy = { x: this.#panX, y: this.#panY };
+    this.#panGlide = this.#gsap.to(proxy, {
+      x: clamp(this.#panX + this.#panVelX * 240, maxX),
+      y: clamp(this.#panY + this.#panVelY * 240, maxY),
+      duration: 0.7,
+      ease: 'power3.out',
+      onUpdate: () => {
+        this.#panX = proxy.x;
+        this.#panY = proxy.y;
+        this.#applyPan();
+      },
+      onComplete: () => {
+        this.#panGlide = null;
+        this.#imgEl?.classList.remove('is-panning');
+      }
+    });
+    return true;
   }
 
   #triggerFrameCrossfade(navDir = 'next') {
@@ -775,6 +883,8 @@ class LightboxController {
   }
 
   #resetZoom() {
+    this.#panGlide?.kill();
+    this.#panGlide = null;
     this.#isZoomed = false;
     this.#panX = 0;
     this.#panY = 0;
@@ -1026,6 +1136,7 @@ class LightboxController {
         this.#startPanY  = this.#panY;
         this.#hasDragged = false;
         this.#isPanning  = true;
+        this.#beginPanTracking(e.clientX, e.clientY);
       });
 
       window.addEventListener('mousemove', e => {
@@ -1040,18 +1151,20 @@ class LightboxController {
         this.#panX = Math.max(-maxX, Math.min(maxX, this.#startPanX + deltaX));
         this.#panY = Math.max(-maxY, Math.min(maxY, this.#startPanY + deltaY));
         this.#imgEl.style.transform = `scale(1.85) translate3d(${this.#panX / 1.85}px, ${this.#panY / 1.85}px, 0)`;
+        this.#trackPan(e.clientX, e.clientY);
       });
 
       window.addEventListener('mouseup', () => {
         if (this.#isPanning) {
           this.#isPanning = false;
-          this.#imgEl?.classList.remove('is-panning');
+          if (!(this.#hasDragged && this.#glidePan())) this.#imgEl?.classList.remove('is-panning');
         }
       });
 
       this.#imgEl.addEventListener('wheel', e => {
         if (!this.#isZoomed) return;
         e.preventDefault();
+        this.#panGlide?.kill();
         const { maxX, maxY } = this.#getPanBounds();
         this.#panX = Math.max(-maxX, Math.min(maxX, this.#panX - e.deltaX));
         this.#panY = Math.max(-maxY, Math.min(maxY, this.#panY - e.deltaY));
@@ -1091,13 +1204,24 @@ class LightboxController {
     let touchEndX   = 0;
     let touchEndY   = 0;
     let isMultiTouch = false;
+    // 'x' while the print follows the finger, 'y' for a vertical drag, null until decided
+    let swipeAxis = null;
+    let swipeVelX = 0;
+    let swipeLastX = 0;
+    let swipeLastT = 0;
 
     this.#lightboxEl.addEventListener('touchstart', e => {
       if (e.touches.length > 1) {
         isMultiTouch = true;
+        if (swipeAxis === 'x') this.#settleSwipe();
+        swipeAxis = null;
         return;
       }
       isMultiTouch = false;
+      swipeAxis = null;
+      swipeVelX = 0;
+      swipeLastX = e.touches[0].clientX;
+      swipeLastT = Date.now();
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
       touchEndX   = touchStartX;
@@ -1110,6 +1234,7 @@ class LightboxController {
         this.#startPanY  = this.#panY;
         this.#hasDragged = false;
         this.#isPanning  = true;
+        this.#beginPanTracking(touchStartX, touchStartY);
       }
     }, { passive: true });
 
@@ -1132,6 +1257,21 @@ class LightboxController {
           if (this.#imgEl) {
             this.#imgEl.style.transform = `scale(1.85) translate3d(${this.#panX / 1.85}px, ${this.#panY / 1.85}px, 0)`;
           }
+          this.#trackPan(touchEndX, touchEndY);
+        } else if (!this.#isZoomed && !isMultiTouch && this.#canFollowSwipe()) {
+          const deltaX = touchEndX - touchStartX;
+          const deltaY = touchEndY - touchStartY;
+          if (!swipeAxis && Math.hypot(deltaX, deltaY) > 8) {
+            swipeAxis = Math.abs(deltaX) > Math.abs(deltaY) * 1.2 ? 'x' : 'y';
+            if (swipeAxis === 'x') this.#gsap.killTweensOf(this.#pictureEl);
+          }
+          if (swipeAxis === 'x') {
+            const now = Date.now();
+            if (now > swipeLastT) swipeVelX = (touchEndX - swipeLastX) / (now - swipeLastT);
+            swipeLastX = touchEndX;
+            swipeLastT = now;
+            this.#gsap.set(this.#pictureEl, { x: deltaX });
+          }
         }
       }
     }, { passive: true });
@@ -1139,12 +1279,18 @@ class LightboxController {
     this.#lightboxEl.addEventListener('touchend', () => {
       if (this.#isZoomed) {
         this.#isPanning = false;
-        this.#imgEl?.classList.remove('is-panning');
+        if (!(this.#hasDragged && this.#glidePan())) this.#imgEl?.classList.remove('is-panning');
         return;
       }
       if (isMultiTouch) return;
       const deltaX = touchEndX - touchStartX;
       const deltaY = touchEndY - touchStartY;
+      if (swipeAxis === 'x') {
+        swipeAxis = null;
+        // A finger that stopped before lifting is a drop, not a flick
+        this.#finishSwipe(deltaX, Date.now() - swipeLastT > 80 ? 0 : swipeVelX);
+        return;
+      }
       const absX   = Math.abs(deltaX);
       const absY   = Math.abs(deltaY);
 
@@ -1486,6 +1632,7 @@ class GalleryPresenter {
     sync(false);
     more.addEventListener('click', () => {
       const open = more.getAttribute('aria-expanded') !== 'true';
+      const playFlip = this.#captureFlip(more);
       folded.forEach(fig => fig.classList.toggle('is-folded', !open));
       sync(open);
       if (open) {
@@ -1494,8 +1641,33 @@ class GalleryPresenter {
         // The rows above the button just collapsed: keep the button, not empty space, in view
         more.scrollIntoView?.({ block: 'center', behavior: 'instant' });
       }
+      playFlip?.();
     });
     return more;
+  }
+
+  // With GSAP's Flip, the button and everything after it glide to their new places when a
+  // story unfolds or folds, instead of jumping. Returns null when Flip is unavailable.
+  #captureFlip(more) {
+    const gsap = typeof window !== 'undefined' ? window.gsap : null;
+    const Flip = typeof window !== 'undefined' ? window.Flip : null;
+    const grid = more.parentElement;
+    if (!gsap || !Flip || !grid || this.#transitionCoordinator.prefersReducedMotion) return null;
+    const targets = [more];
+    for (let el = more.nextElementSibling; el; el = el.nextElementSibling) {
+      if (!el.classList.contains('is-folded')) targets.push(el);
+    }
+    gsap.registerPlugin(Flip);
+    const state = Flip.getState(targets);
+    return () => {
+      // `is-flipping` switches off the cards' own transform transitions, which would lag the tween
+      grid.classList.add('is-flipping');
+      const done = () => {
+        grid.classList.remove('is-flipping');
+        gsap.set(targets, { clearProps: 'transform' });
+      };
+      Flip.from(state, { duration: 0.55, ease: 'power3.out', onComplete: done, onInterrupt: done });
+    };
   }
 
   #bindControls() {
@@ -2198,6 +2370,88 @@ class HeroCarouselController {
 }
 
 
+/* ── 8c. SCROLL-LINKED MOTION (GSAP ScrollTrigger) ── */
+
+// Two moments are tied to the scroll position itself rather than to a timer: the hero eases
+// back as the page leaves it, and the closing tagline lights up word by word as it arrives.
+// GSAP is optional. Without it, or with reduced motion, the CSS versions stay in charge.
+class ScrollMotionController {
+  #gsap = (typeof window !== 'undefined' && window.gsap) || null;
+
+  constructor() {
+    const ScrollTrigger = typeof window !== 'undefined' ? window.ScrollTrigger : null;
+    if (!this.#gsap || !ScrollTrigger) return;
+    this.#gsap.registerPlugin(ScrollTrigger);
+
+    const media = this.#gsap.matchMedia();
+    // Wide screens only: on phones the deck sits below the text, so the hero is still
+    // being read while it scrolls and must not fade.
+    media.add('(prefers-reduced-motion: no-preference) and (min-width: 960px)', () => this.#heroExit());
+    media.add('(prefers-reduced-motion: no-preference)', () => this.#closingReveal());
+  }
+
+  #heroExit() {
+    const inner = document.querySelector('#hero .hero-inner');
+    if (!inner) return;
+    this.#gsap.to(inner, {
+      y: -56,
+      opacity: 0.15,
+      ease: 'none',
+      scrollTrigger: { trigger: '#hero', start: 'top top', end: 'bottom top', scrub: true }
+    });
+  }
+
+  #closingReveal() {
+    const section = document.getElementById('closing');
+    const line = section?.querySelector('.closing-line');
+    if (!line) return undefined;
+    const units = this.#splitWords(line);
+    const underline = line.querySelector('.bm-hl.under i');
+    section.classList.add('has-scrub');
+
+    const timeline = this.#gsap.timeline({
+      defaults: { ease: 'none' },
+      // clamp(): the section sits near the end of the page, so the range must finish
+      // within the scroll that actually exists
+      scrollTrigger: { trigger: section, start: 'clamp(top 88%)', end: 'clamp(top 48%)', scrub: 0.4 }
+    });
+    timeline.fromTo(units, { opacity: 0.16 }, { opacity: 1, duration: 0.3, stagger: 0.08 });
+    if (underline) timeline.fromTo(underline, { scaleX: 0 }, { scaleX: 1, duration: 0.35 }, '>-0.15');
+
+    // matchMedia reverts the tweens; this hands the line back to the CSS entrance
+    return () => section.classList.remove('has-scrub');
+  }
+
+  // Wraps each word in a span once; the highlighted phrase stays one unit. Words stay
+  // inline with real spaces between them, so wrapping and screen readers are unchanged.
+  #splitWords(line) {
+    if (line.dataset.split === 'true') return Array.from(line.querySelectorAll('.closing-word'));
+    Array.from(line.childNodes).forEach(node => {
+      if (node.nodeType === 1) {
+        node.classList.add('closing-word');
+        return;
+      }
+      if (node.nodeType !== 3) return;
+      const fragment = document.createDocumentFragment();
+      node.textContent.split(/(\s+)/).forEach(part => {
+        if (!part) return;
+        if (/^\s+$/.test(part)) {
+          fragment.appendChild(document.createTextNode(part));
+          return;
+        }
+        const word = document.createElement('span');
+        word.className = 'closing-word';
+        word.textContent = part;
+        fragment.appendChild(word);
+      });
+      line.replaceChild(fragment, node);
+    });
+    line.dataset.split = 'true';
+    return Array.from(line.querySelectorAll('.closing-word'));
+  }
+}
+
+
 /* ── 9. APPLICATION BOOTSTRAP ── */
 
 const repository            = new PortfolioRepository(photoData, CATS);
@@ -2209,6 +2463,7 @@ const galleryPresenter      = new GalleryPresenter(repository, transitionCoordin
 const telemetryHud          = new TelemetryHudController();
 const editorialMotion       = new EditorialMotionController(transitionCoordinator);
 const heroCarousel          = new HeroCarouselController(repository, transitionCoordinator);
+const scrollMotion          = new ScrollMotionController();
 
 // Keep the footer copyright year current without a yearly edit
 const footerYearEl = document.getElementById('ft-year');
