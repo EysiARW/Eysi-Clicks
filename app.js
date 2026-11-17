@@ -108,6 +108,11 @@ const HERO_ROTATION = [
   "institutional/EYSI-32.jpg",
 ];
 
+/* Shorter names for hero cards whose story title is too long for the small caption */
+const HERO_SHORT_TITLES = {
+  "UC - PNC Foundation Week 2026": "Foundation Week",
+};
+
 
 /* ── 1. DOMAIN MODEL & REPOSITORY ── */
 
@@ -160,6 +165,18 @@ class PhotoAsset {
   // Small derivatives written next to the full WebP (see CLAUDE.md "How to add a photo")
   get gridSrc()     { return this.#webpSrc.replace(/\.webp$/i, '.grid.webp'); }
   get thumbSrc()    { return this.#webpSrc.replace(/\.webp$/i, '.thumb.webp'); }
+  // Grid candidates by pixel width (photos are 3:2 or 2:3; long edges 480 / 960 / 2048).
+  // Lead prints also offer the full frame, so they stay sharp on high-density desktops.
+  gridSrcset(isLead = false) {
+    const k = this.#orientation === 'portrait' ? 2 / 3 : 1;
+    const w = longEdge => `${Math.round(longEdge * k)}w`;
+    const list = [
+      `${this.#webpSrc.replace(/\.webp$/i, '.sm.webp')} ${w(480)}`,
+      `${this.gridSrc} ${w(960)}`,
+    ];
+    if (isLead) list.push(`${this.#webpSrc} ${w(2048)}`);
+    return list.join(', ');
+  }
   get caption()     { return this.#caption; }
   get alt()         { return this.#alt; }
   get category()    { return this.#category; }
@@ -1367,7 +1384,8 @@ class GalleryPresenter {
       const figure = document.createElement('figure');
       figure.className = 'photo-item';
       // A story of three or more opens on one large lead print
-      if (posInStory === 0 && storySize >= GalleryPresenter.#LEAD_MIN) figure.classList.add('is-lead');
+      const isLead = posInStory === 0 && storySize >= GalleryPresenter.#LEAD_MIN;
+      if (isLead) figure.classList.add('is-lead');
       // Very long stories show their first rows and fold the rest behind "Show all"
       if (storySize > GalleryPresenter.#FOLD_OVER && posInStory >= GalleryPresenter.#FOLD_SHOWN) {
         figure.classList.add('is-folded');
@@ -1386,7 +1404,9 @@ class GalleryPresenter {
       // The tiny filmstrip thumb doubles as a low-res placeholder while the grid image loads
       picture.style.setProperty?.('--ph-image', `url("${asset.thumbSrc}")`);
       const sourceWebp = document.createElement('source');
-      sourceWebp.srcset = asset.gridSrc;
+      sourceWebp.srcset = asset.gridSrcset(isLead);
+      // Rough share of the viewport a print's cell takes (2 columns, 3 from 1024px)
+      sourceWebp.sizes = isLead ? '(min-width: 1024px) 60vw, 80vw' : '(min-width: 1024px) 28vw, 45vw';
       sourceWebp.type = 'image/webp';
 
       const img = document.createElement('img');
@@ -1459,11 +1479,21 @@ class GalleryPresenter {
     const more = document.createElement('button');
     more.type = 'button';
     more.className = 'story-more btn-editorial btn-editorial-secondary';
-    more.textContent = `Show all ${total} photos`;
+    const sync = open => {
+      more.textContent = open ? 'Show fewer photos' : `Show all ${total} photos`;
+      more.setAttribute('aria-expanded', String(open));
+    };
+    sync(false);
     more.addEventListener('click', () => {
-      folded.forEach(fig => fig.classList.remove('is-folded'));
-      folded[0]?.focus({ preventScroll: true });
-      more.remove();
+      const open = more.getAttribute('aria-expanded') !== 'true';
+      folded.forEach(fig => fig.classList.toggle('is-folded', !open));
+      sync(open);
+      if (open) {
+        folded[0]?.focus({ preventScroll: true });
+      } else {
+        // The rows above the button just collapsed: keep the button, not empty space, in view
+        more.scrollIntoView?.({ block: 'center', behavior: 'instant' });
+      }
     });
     return more;
   }
@@ -1624,6 +1654,8 @@ class TelemetryHudController {
       } else if (scrollY < this.#lastScrollY - 6 || scrollY <= 50) {
         this.#navEl.classList.remove('nav-hidden');
       }
+      // Lets the pinned gallery tabs sit at the very top while the nav is away
+      document.documentElement.classList.toggle('nav-away', this.#navEl.classList.contains('nav-hidden'));
     }
     if (this.#bttBtn) {
       this.#bttBtn.classList.toggle('visible', scrollY > 480);
@@ -1693,6 +1725,7 @@ class EditorialMotionController {
   #aboutWrap;
   #gallerySection;
   #packagesSection;
+  #closingSection;
   #footerSection;
   #transitionCoordinator;
 
@@ -1705,6 +1738,7 @@ class EditorialMotionController {
     this.#aboutWrap      = document.querySelector('.about-wrap');
     this.#gallerySection = document.getElementById('gallery');
     this.#packagesSection = document.getElementById('packages');
+    this.#closingSection = document.getElementById('closing');
     this.#footerSection  = document.getElementById('footer');
 
     this.#initKineticTypography();
@@ -1821,6 +1855,7 @@ class EditorialMotionController {
       if (this.#aboutWrap) this.#aboutWrap.classList.add('is-in-view');
       if (this.#gallerySection) this.#gallerySection.classList.add('is-in-view');
       if (this.#packagesSection) this.#packagesSection.classList.add('is-in-view');
+      if (this.#closingSection) this.#closingSection.classList.add('is-in-view');
       if (this.#footerSection) this.#footerSection.classList.add('is-in-view');
       return;
     }
@@ -1829,6 +1864,7 @@ class EditorialMotionController {
       if (this.#aboutWrap) this.#aboutWrap.classList.add('is-in-view');
       if (this.#gallerySection) this.#gallerySection.classList.add('is-in-view');
       if (this.#packagesSection) this.#packagesSection.classList.add('is-in-view');
+      if (this.#closingSection) this.#closingSection.classList.add('is-in-view');
       if (this.#footerSection) this.#footerSection.classList.add('is-in-view');
       return;
     }
@@ -1840,7 +1876,7 @@ class EditorialMotionController {
             if (this.#aboutWrap) this.#aboutWrap.classList.add('is-in-view');
           } else if (entry.target === this.#gallerySection) {
             entry.target.classList.add('is-in-view');
-          } else if (entry.target === this.#packagesSection) {
+          } else if (entry.target === this.#packagesSection || entry.target === this.#closingSection) {
             entry.target.classList.add('is-in-view');
           } else if (entry.target === this.#footerSection) {
             entry.target.classList.add('is-in-view');
@@ -1856,6 +1892,7 @@ class EditorialMotionController {
     if (this.#aboutSection) revealObserver.observe(this.#aboutSection);
     if (this.#gallerySection) revealObserver.observe(this.#gallerySection);
     if (this.#packagesSection) revealObserver.observe(this.#packagesSection);
+    if (this.#closingSection) revealObserver.observe(this.#closingSection);
     if (this.#footerSection) revealObserver.observe(this.#footerSection);
   }
 
@@ -2148,7 +2185,7 @@ class HeroCarouselController {
     }
     const title = el.querySelector('.monument-title');
     const context = el.querySelector('.monument-context');
-    if (title) title.textContent = asset.caption;
+    if (title) title.textContent = HERO_SHORT_TITLES[asset.caption] || asset.caption;
     if (context) context.textContent = asset.categoryLabel;
   }
 
