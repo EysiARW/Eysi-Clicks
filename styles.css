@@ -39,6 +39,17 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+/* The peso sign alone (1 KB), declared after latin-ext so it wins for U+20B1: the price
+   cards no longer pull in the whole 111 KB latin-ext file for one character */
+@font-face {
+  font-family: 'EB Garamond';
+  src: url('fonts/EBGaramond-Roman-peso.woff2') format('woff2');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+20B1;
+}
+
 @font-face {
   font-family: 'EB Garamond';
   src: url('fonts/EBGaramond-Italic-latin.woff2') format('woff2');
@@ -1894,11 +1905,36 @@ html[data-theme="dark"] .about-img-inner {
 .gallery-controls {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   max-width: var(--container-max);
   width: 100%;
-  margin: 0 auto;
-  padding: 0 0 2.5rem;
+  margin: 0 auto 2rem;
+  padding: var(--space-xs) 0;
+}
+
+/* From tablets up the tabs fit one row, so they stay pinned while the gallery scrolls:
+   under the nav when it is showing, at the very top when it has slid away. The fill is the
+   page colour, stretched edge to edge, so prints pass cleanly beneath. On phones the tabs
+   wrap to two rows and would cover too much of the screen. */
+@media (min-width: 768px) {
+  .gallery-controls {
+    position: sticky;
+    top: calc(var(--header-height) - var(--space-xs));
+    z-index: 40;
+    transition: top 0.38s var(--motion-ease-cinematic);
+  }
+
+  .gallery-controls::before {
+    content: '';
+    position: absolute;
+    inset: 0 -100vmax;
+    z-index: -1;
+    background: var(--bg);
+  }
+
+  html.nav-away .gallery-controls {
+    top: 0;
+  }
 }
 
 .cat-tabs {
@@ -1955,8 +1991,7 @@ html[data-theme="dark"] .about-img-inner {
   padding: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--text-subtle);
-  opacity: 0.72;
+  color: var(--text-muted);
   transition: color 0.3s, opacity 0.3s;
 }
 
@@ -2134,6 +2169,16 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
   .photo-grid .photo-item.is-lead,
   .photo-grid .story-head ~ .photo-item.is-lead {
     padding: var(--space-sm);
+  }
+
+  /* Portraits get a frame of their own shape, so they fill the card instead of sitting
+     small inside a landscape one; a landscape beside one centres in the taller mat */
+  .photo-grid .photo-item {
+    justify-content: center;
+  }
+
+  .photo-grid .photo-item .photo-frame.is-portrait {
+    aspect-ratio: 2 / 3;
   }
 }
 
@@ -3110,17 +3155,6 @@ html[data-theme="dark"] .photo-item img {
   animation-delay: 0.32s;
 }
 
-/* The one booking path: opens the EYSI CLICKS Facebook Page */
-.packages-cta {
-  display: flex;
-  justify-content: center;
-  margin-top: var(--space-2xl);
-}
-
-#packages.is-in-view .packages-cta {
-  animation: cardRise 0.6s var(--motion-ease-cinematic) 0.46s backwards;
-}
-
 html[data-theme="dark"] .package-card {
   box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
 }
@@ -3218,6 +3252,64 @@ html[data-theme="dark"] .package-card {
 
 #packages.is-in-view .packages-shared {
   animation: cardRise 0.6s var(--motion-ease-cinematic) 0.38s backwards;
+}
+
+
+/* ── 10c. CLOSING (#closing) ── */
+
+/* The page ends the way it opened: the tagline, then the one way to book */
+#closing {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--section-pad-y) var(--container-pad);
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.closing-line {
+  max-width: 24ch;
+  font-family: var(--font-garamond);
+  font-style: italic;
+  font-weight: 400;
+  font-size: var(--fs-h2);
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  text-wrap: balance;
+}
+
+.closing-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-xl);
+}
+
+.closing-note {
+  margin-top: var(--space-sm);
+  font-family: var(--font-interphases);
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
+
+#closing.is-in-view .closing-line {
+  animation: cardRise 0.7s var(--motion-ease-cinematic) 0.05s backwards;
+}
+
+#closing.is-in-view .closing-line .bm-hl.under i {
+  transform: scaleX(1);
+  animation: bmHighlightDraw 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.5s both;
+}
+
+#closing.is-in-view .closing-cta,
+#closing.is-in-view .closing-note {
+  animation: cardRise 0.6s var(--motion-ease-cinematic) 0.3s backwards;
+}
+
+#closing.is-in-view .closing-note {
+  animation-delay: 0.4s;
 }
 
 
@@ -3721,7 +3813,9 @@ footer .ft-sub {
   .story-head .story-count,
   .package-card,
   .packages-shared,
-  .packages-cta,
+  .closing-cta,
+  .closing-line,
+  .closing-note,
   .lightbox-picture {
     opacity: 1;
     animation: none !important;
