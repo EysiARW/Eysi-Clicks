@@ -32,5 +32,4 @@ Applies to, in app.js (vanilla JavaScript ports of React Bits components, JavaSc
 variants, https://reactbits.dev):
 - SpecularLight and SpecularEdgeController (section 8d), from "SpecularButton"
 - JellyTabsController (section 8e), from "JellyRadio"
-- ScrollMotionController#featureExpand (section 8c), from "Scroll Expand"
 - SpotlightCardController (section 8f), from "Spotlight Card"
