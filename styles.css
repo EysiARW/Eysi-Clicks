@@ -657,51 +657,6 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   }
 }
 
-@keyframes deckFanLeft {
-  0% {
-    opacity: 0;
-    transform: translate(0, 48px) rotate(0deg) scale(0.92);
-  }
-  68% {
-    opacity: 1;
-    transform: translate(calc(var(--card-rest-x) * 1.05), calc(var(--card-rest-y) - 4px)) rotate(calc(var(--card-rest-rot) * 1.15)) scale(1.015);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(var(--card-rest-x), var(--card-rest-y)) rotate(var(--card-rest-rot)) scale(1);
-  }
-}
-
-@keyframes deckFanCenter {
-  0% {
-    opacity: 0;
-    transform: translate(0, 44px) rotate(0deg) scale(0.93);
-  }
-  68% {
-    opacity: 1;
-    transform: translate(0, -6px) rotate(-1.5deg) scale(1.02);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(0, 0) rotate(var(--card-rest-rot)) scale(1);
-  }
-}
-
-@keyframes deckFanRight {
-  0% {
-    opacity: 0;
-    transform: translate(0, 48px) rotate(0deg) scale(0.92);
-  }
-  68% {
-    opacity: 1;
-    transform: translate(calc(var(--card-rest-x) * 1.05), calc(var(--card-rest-y) - 4px)) rotate(calc(var(--card-rest-rot) * 1.15)) scale(1.015);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(var(--card-rest-x), var(--card-rest-y)) rotate(var(--card-rest-rot)) scale(1);
-  }
-}
-
 @keyframes heroEntrance {
   to {
     opacity: 1;
@@ -1084,62 +1039,61 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   width: 100%;
 }
 
+/* Hero fan (HeroFanController, a port of ReactDrops' Fan Gallery). Five equal cards on a
+   symmetric curve, left side in front. JS places every card with one transform and sets the
+   stage height, card size and corner radius; until it has measured, the stage stays hidden. */
 .hero-deck {
   position: relative;
   width: 100%;
   max-width: min(560px, 100%);
-  height: clamp(380px, 48vh, 470px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  height: 340px;
+  min-height: 120px;
   margin: 0 auto;
-}
-
-.hero-card {
-  position: absolute;
-  width: clamp(210px, 22vw, 240px);
-  bottom: 8px;
-  left: 50%;
-  margin-left: calc(-1 * clamp(210px, 22vw, 240px) / 2);
-  transform-origin: 50% 110%;
-  cursor: pointer;
-  touch-action: manipulation;
+  isolation: isolate;
+  overflow: clip;
+  touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
 }
 
-/* Card Fanning (playing card deck layout: generous spread so all 3 photos are clearly visible).
-   The outer <figure class="hero-card"> stays anchored at its resting coordinates so the hit-test
-   boundary never moves out from under the pointer on hover; the inner .hero-monument-mat performs
-   the GPU-composited hover lift. */
-.hero-card-left {
-  z-index: 1;
-  --card-rest-x: -130px;
-  --card-rest-y: 12px;
-  --card-rest-rot: -8deg;
-  --card-hover-lift: -18px;
-  transform: translate3d(var(--card-rest-x), var(--card-rest-y), 0) rotate(var(--card-rest-rot));
-  animation: deckFanLeft 0.75s var(--motion-ease-spring) var(--motion-delay-deck) backwards;
+.hero-deck:not([data-ready]) {
+  visibility: hidden;
 }
 
-.hero-card-center {
-  z-index: 2;
-  --card-rest-x: 0px;
-  --card-rest-y: 0px;
-  --card-rest-rot: -1deg;
-  --card-hover-lift: -18px;
-  transform: translate3d(var(--card-rest-x), var(--card-rest-y), 0) rotate(var(--card-rest-rot));
-  animation: deckFanCenter 0.75s var(--motion-ease-spring) calc(var(--motion-delay-deck) + 80ms) backwards;
+/* At rest the fan is clipped to its stage. While a card is lifted its neighbours may reach past
+   the sides, and while anything moves (cards being dealt, springs overshooting) nothing is cut. */
+.hero-deck.is-active {
+  overflow-x: visible;
+  overflow-y: clip;
 }
 
-.hero-card-right {
+.hero-deck.is-animating {
+  overflow: visible;
   z-index: 3;
-  --card-rest-x: 130px;
-  --card-rest-y: 14px;
-  --card-rest-rot: 8deg;
-  --card-hover-lift: -18px;
-  transform: translate3d(var(--card-rest-x), var(--card-rest-y), 0) rotate(var(--card-rest-rot));
-  animation: deckFanRight 0.75s var(--motion-ease-spring) calc(var(--motion-delay-deck) + 160ms) backwards;
+}
+
+.hero-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 162px;
+  aspect-ratio: 0.8;
+  border-radius: 18px;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  cursor: pointer;
+  touch-action: manipulation;
+  outline: none;
+}
+
+.hero-deck.is-moving .hero-card {
+  will-change: transform;
+}
+
+.hero-card:focus-visible .hero-monument-mat {
+  outline: 2px solid var(--accent-bronze);
+  outline-offset: 3px;
 }
 
 /* On short screens the hero content is taller than the viewport, so the absolutely
@@ -1150,181 +1104,9 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   }
 }
 
-/* Hero wheel (HeroCarouselController). The fourth card waits hidden until the wheel turns it
-   in; once turning, JS owns each card's transform, opacity and stacking. Every caption sits
-   on the exposed left edge because each card is overlapped by its right-hand neighbour. */
-.hero-card-extra {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.hero-deck.is-turning .hero-card {
-  will-change: transform, opacity;
-}
-
-.hero-deck.is-turning .hero-monument-caption {
-  justify-content: flex-start;
-}
-
-.hero-deck.is-turning .hero-card:hover,
-.hero-deck.is-turning .hero-card:focus-visible {
-  z-index: 60 !important;
-}
-
-/* The two portals at the ends of the wheel's arc: a soft bronze light behind the cards that
-   a card fades into on the right and emerges from on the left. JS sizes and places each
-   one where a card disappears, and drives only its opacity. */
-.hero-portal {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  transform-origin: 50% 110%;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(ellipse 50% 50% at center,
-    color-mix(in srgb, var(--accent-bronze) 30%, transparent) 0%,
-    transparent 100%);
-}
-
-/* Stable Hover & Focus: outer figure keeps its stationary hit-box while inner mat lifts smoothly */
-.hero-card:hover,
-.hero-card:focus-visible {
-  z-index: 10;
-  outline: none;
-}
-
-.hero-card .hero-monument-mat {
-  will-change: transform;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  transform: translate3d(0, 0, 0) scale(1);
-  transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.36s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.25s ease;
-}
-
-.hero-card:focus-visible .hero-monument-mat {
-  transform: translate3d(0, var(--card-hover-lift, -18px), 0) scale(1.035);
-  border-color: var(--border-strong);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
-}
-
-@media (hover: hover) {
-  .hero-card:hover .hero-monument-mat {
-    transform: translate3d(0, var(--card-hover-lift, -18px), 0) scale(1.035);
-    border-color: var(--border-strong);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
-  }
-}
-
-.hero-card:focus-visible .hero-monument-mat {
-  outline: 2px solid var(--accent-bronze);
-  outline-offset: 4px;
-}
-
-/* Tablet adjustments (600px - 959px) */
-@media (min-width: 600px) and (max-width: 959px) {
-  .hero-deck {
-    max-width: 480px;
-    height: 420px;
-  }
-  .hero-card {
-    width: 200px;
-    margin-left: -100px;
-  }
-  .hero-card-left {
-    --card-rest-x: -105px;
-    --card-rest-y: 10px;
-    --card-rest-rot: -7deg;
-    --card-hover-lift: -14px;
-  }
-  .hero-card-center {
-    --card-rest-x: 0px;
-    --card-rest-y: 0px;
-    --card-rest-rot: -1deg;
-    --card-hover-lift: -16px;
-  }
-  .hero-card-right {
-    --card-rest-x: 105px;
-    --card-rest-y: 12px;
-    --card-rest-rot: 7deg;
-    --card-hover-lift: -14px;
-  }
-}
-
-/* Small desktop (960px - 1199px): the showcase column is too narrow for the full fan,
-   so the right card would run past the viewport edge, and cards arriving on the hero
-   wheel's left would cross the tagline. */
-@media (min-width: 960px) and (max-width: 1199px) {
-  .hero-card {
-    width: 188px;
-    margin-left: -94px;
-  }
-  .hero-card-left {
-    --card-rest-x: -102px;
-  }
-  .hero-card-right {
-    --card-rest-x: 102px;
-  }
-}
-
-/* Mobile adjustments (< 600px, e.g. 360px - 390px) */
-@media (max-width: 599px) {
-  .hero-deck {
-    max-width: min(320px, 100%);
-    height: 262px;
-  }
-  .hero-card {
-    width: 156px;
-    margin-left: -78px;
-    bottom: 6px;
-  }
-  .hero-card .hero-monument-mat {
-    padding: 0.75rem 0.75rem 0.95rem 0.75rem;
-  }
-  .hero-card .monument-title {
-    font-size: 0.82rem;
-  }
-  .hero-card-left {
-    --card-rest-x: -78px;
-    --card-rest-y: 8px;
-    --card-rest-rot: -5.5deg;
-    --card-hover-lift: -10px;
-  }
-  .hero-card-center {
-    --card-rest-x: 0px;
-    --card-rest-y: 0px;
-    --card-rest-rot: -1deg;
-    --card-hover-lift: -12px;
-  }
-  .hero-card-right {
-    --card-rest-x: 78px;
-    --card-rest-y: 10px;
-    --card-rest-rot: 5.5deg;
-    --card-hover-lift: -10px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hero-card,
-  .hero-card-left,
-  .hero-card-center,
-  .hero-card-right,
-  .hero-card .hero-monument-mat {
-    animation: none !important;
-    transition: none !important;
-  }
-  .hero-card:hover .hero-monument-mat,
-  .hero-card:focus-visible .hero-monument-mat {
-    transform: none !important;
-  }
-}
-
 /* Hero entrance settled state: once the one-time entrance choreography concludes,
    shut down all entrance keyframes permanently so that scrolling back up to the hero
    or repainting never retriggers keyframes or re-evaluates 0% offsets. */
-html.hero-settled .hero-card-left,
-html.hero-settled .hero-card-center,
-html.hero-settled .hero-card-right,
 html.hero-settled .hero-title-word,
 html.hero-settled .hero-title .bm-char,
 html.hero-settled .hero-tagline,
@@ -1346,94 +1128,32 @@ html.hero-settled .hero-tagline .bm-hl.under i {
   transform: scaleX(1) !important;
 }
 
-.hero-monument {
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
 .hero-monument-mat {
-  display: flex;
-  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
   background: var(--surface-mat);
-  padding: var(--mat-pad);
   border: 1px solid var(--border);
-  border-radius: var(--radius-mat);
   box-shadow: var(--shadow-ambient);
-  transition: transform 0.5s var(--shutter-ease), box-shadow 0.5s var(--shutter-ease), border-color 0.3s ease;
-}
-
-@media (hover: hover) {
-  .hero-monument:not(.hero-card):hover .hero-monument-mat {
-    transform: translateY(-3px);
-    border-color: var(--border-strong);
-    box-shadow: var(--shadow-elevated);
-  }
 }
 
 .hero-monument-mat picture {
   display: block;
-  overflow: hidden;
+  height: 100%;
   background: var(--surface);
-  border: 1px solid rgba(17, 17, 17, 0.08);
-  border-radius: var(--radius-photo);
-}
-
-html[data-theme="dark"] .hero-monument-mat picture {
-  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .hero-monument-mat img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   aspect-ratio: 4 / 5;
   max-height: min(65vh, 460px);
   object-fit: cover;
   object-position: center 20%;
   filter: brightness(0.98) contrast(1.02);
-}
-
-.hero-monument-caption {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 0.65rem;
-  padding: 0 0.2rem;
-  text-align: center;
-  overflow: hidden;
-}
-
-/* The left and center cards are overlapped on their right side by the next card in the fan,
-   so their captions sit on the exposed left edge instead of the covered middle. */
-.hero-card-left .hero-monument-caption,
-.hero-card-center .hero-monument-caption {
-  justify-content: flex-start;
-}
-
-.monument-plate {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.monument-sep {
-  display: none;
-}
-
-.monument-title {
-  font-family: var(--font-garamond);
-  font-style: italic;
-  font-size: 0.92rem;
-  text-transform: none;
-  color: var(--text);
-  font-weight: 500;
-  white-space: nowrap;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.monument-context {
-  display: none;
+  pointer-events: none;
 }
 
 .hero-scroll-hint {
@@ -2324,8 +2044,7 @@ html[data-theme="dark"] .photo-item {
 
 /* Signature motion, "the print develops": a mat-coloured sheet lifts off the photo
    from the bottom up once the card is revealed. Same move on the hero cards. */
-.photo-item .photo-frame::after,
-.hero-monument-mat picture::after {
+.photo-item .photo-frame::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -2341,21 +2060,6 @@ html[data-theme="dark"] .photo-item {
   transition: transform 0.9s var(--motion-ease-cinematic) calc(var(--reveal-delay, 0ms) + 140ms);
 }
 
-.hero-monument-mat picture {
-  position: relative;
-}
-
-.hero-monument-mat picture::after {
-  animation: printDevelop 0.75s var(--motion-ease-cinematic) calc(var(--motion-delay-deck) + 120ms) both;
-}
-
-.hero-card-center .hero-monument-mat picture::after {
-  animation-delay: calc(var(--motion-delay-deck) + 200ms);
-}
-
-.hero-card-right .hero-monument-mat picture::after {
-  animation-delay: calc(var(--motion-delay-deck) + 280ms);
-}
 
 @keyframes printDevelop {
   from { transform: scaleY(1); }
@@ -3723,19 +3427,6 @@ footer .ft-sub {
   .nav-logo-img {
     height: 26px;
   }
-  .hero-card {
-    width: 132px;
-    margin-left: -66px;
-  }
-  .hero-card-left {
-    --card-rest-x: -72px;
-  }
-  .hero-card-right {
-    --card-rest-x: 72px;
-  }
-  .hero-card .monument-title {
-    font-size: 0.75rem;
-  }
   .hero-categories {
     letter-spacing: 0.06em;
     column-gap: 0.45rem;
@@ -3775,8 +3466,6 @@ footer .ft-sub {
   .hero-cta-group,
   .hero-scroll-hint,
   .hero-deck,
-  .hero-frame,
-  .hero-monument,
   .hero-monument-mat img,
   .hero-inner,
   .about-img,
@@ -3817,7 +3506,6 @@ footer .ft-sub {
   }
 
   .photo-item .photo-frame::after,
-  .hero-monument-mat picture::after,
   .about-img picture::after {
     display: none;
   }
@@ -3836,15 +3524,5 @@ footer .ft-sub {
 
   .scroll-line {
     animation: none !important;
-  }
-
-  .hero-card-left {
-    transform: translate(var(--card-rest-x), var(--card-rest-y)) rotate(var(--card-rest-rot)) !important;
-  }
-  .hero-card-center {
-    transform: translate(var(--card-rest-x), var(--card-rest-y)) rotate(var(--card-rest-rot)) !important;
-  }
-  .hero-card-right {
-    transform: translate(var(--card-rest-x), var(--card-rest-y)) rotate(var(--card-rest-rot)) !important;
   }
 }
