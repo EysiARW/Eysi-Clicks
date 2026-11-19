@@ -3340,6 +3340,193 @@ void main() {
   }
 }
 
+/* ── 8e. JELLY TABS (the chosen category tab swells and its neighbours make room) ── */
+
+// A vanilla port of React Bits' JellyRadio (MIT + Commons Clause, notice in
+// vendor/reactbits/LICENSE.md). Only the motion is ported: the tabs keep their ARIA tab
+// pattern, look and switching (GalleryPresenter). The chosen tab grows, every other tab
+// gives up a little, and the tabs beside it are shoved aside, each on its own spring and
+// wide before tall. As in the component, a click animates and everything else (arrow keys,
+// Back / Forward, opening a hero card) jumps. Changes from the original: when the tabs wrap
+// (phones) only the chosen tab's own row parts, and the parting never pushes a tab past the
+// edge of the controls bar.
+class JellyTabsController {
+  // The component's defaults, which the owner's integration used (2026-11-19)
+  static #OPTIONS = Object.freeze({
+    swell: 0.2,       // how much the chosen tab grows
+    barge: 6,         // extra px every neighbour is shoved beyond the room it makes
+    shrink: 0.05,     // how much every other tab gives up
+    jelly: 1,         // wide-before-tall split
+    bounce: 0.25,     // one minus the damping ratio
+    stagger: 22,      // ms per step before a neighbour moves
+    stiffness: 580,
+  });
+  static #EDGE = 4;   // px kept clear at the edges of the controls bar
+
+  #transitionCoordinator;
+  #list = null;
+  #tabs = [];
+  #springs = [];
+  #layout = [];       // per tab: untransformed left, width and row
+  #bounds = { left: 0, right: 0 };
+  #selected = -1;
+  #fromPointer = false;
+  #raf = 0;
+  #last = 0;
+
+  constructor(transitionCoordinator) {
+    this.#transitionCoordinator = transitionCoordinator;
+    this.#list = document.querySelector('.cat-tabs');
+    if (!this.#list || typeof requestAnimationFrame !== 'function'
+      || typeof MutationObserver !== 'function') return;
+    this.#tabs = Array.from(this.#list.querySelectorAll('.cat-tab'));
+    if (this.#tabs.length < 2) return;
+    const value = rest => ({ pos: rest, vel: 0, target: rest, k: 1, c: 1, m: 1, wait: 0 });
+    this.#springs = this.#tabs.map(() => ({ x: value(0), sx: value(1), sy: value(1) }));
+    this.#list.classList.add('is-jelly');
+    this.#selected = this.#current();
+    this.#bind();
+    this.#settle();
+  }
+
+  #current() {
+    return Math.max(0, this.#tabs.findIndex(tab => tab.getAttribute('aria-selected') === 'true'));
+  }
+
+  #bind() {
+    // Capture runs before the tab's own handler switches it; a keyboard "click" has detail 0
+    this.#list.addEventListener('click', event => {
+      this.#fromPointer = event.detail !== 0;
+      setTimeout(() => { this.#fromPointer = false; }, 0);
+    }, true);
+    new MutationObserver(() => {
+      const next = this.#current();
+      if (next === this.#selected) return;
+      this.#selected = next;
+      this.#apply(next, !this.#fromPointer);
+    }).observe(this.#list, { subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
+    const settle = () => this.#settle();
+    if (typeof ResizeObserver === 'function') new ResizeObserver(settle).observe(this.#list.parentElement || this.#list);
+    document.fonts?.ready?.then(settle);
+  }
+
+  // Reads where each tab sits without its transform, then snaps to the chosen state
+  #settle() {
+    this.#tabs.forEach(tab => { tab.style.transform = ''; });
+    const bar = (this.#list.parentElement || this.#list).getBoundingClientRect();
+    this.#bounds = { left: bar.left + JellyTabsController.#EDGE, right: bar.right - JellyTabsController.#EDGE };
+    this.#layout = this.#tabs.map(tab => {
+      const rect = tab.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, width: rect.width, row: Math.round(rect.top) };
+    });
+    this.#apply(this.#selected, true);
+  }
+
+  // Room the neighbours make on each side, cut short where the bar ends
+  #parting(sel) {
+    const o = JellyTabsController.#OPTIONS;
+    const push = this.#layout[sel].width * o.swell / 2 + o.barge;
+    const row = this.#layout.filter(box => box.row === this.#layout[sel].row);
+    const first = row[0];
+    const last = row[row.length - 1];
+    const roomLeft = first.left - this.#bounds.left + first.width * o.shrink / 2;
+    const roomRight = this.#bounds.right - last.right + last.width * o.shrink / 2;
+    return {
+      left: first === this.#layout[sel] ? 0 : Math.max(0, Math.min(push, roomLeft)),
+      right: last === this.#layout[sel] ? 0 : Math.max(0, Math.min(push, roomRight)),
+    };
+  }
+
+  static #moving(value) {
+    return value.wait > 0 || Math.abs(value.pos - value.target) > 0.0005 || Math.abs(value.vel) > 0.005;
+  }
+
+  static #aim(value, target, k, m, bounce, wait) {
+    value.target = target;
+    value.k = k;
+    value.m = m;
+    value.c = 2 * Math.sqrt(k * m) * (1 - bounce);
+    value.wait = wait;
+  }
+
+  #apply(sel, instant) {
+    if (!this.#layout.length || sel < 0) return;
+    const o = JellyTabsController.#OPTIONS;
+    const jump = instant || this.#transitionCoordinator?.prefersReducedMotion;
+    const row = this.#layout[sel].row;
+    const parting = this.#parting(sel);
+    this.#tabs.forEach((tab, i) => {
+      const spring = this.#springs[i];
+      const sameRow = this.#layout[i].row === row;
+      const x = !sameRow || i === sel ? 0 : (i < sel ? -parting.left : parting.right);
+      const s = i === sel ? 1 + o.swell : 1 - o.shrink;
+      if (jump) {
+        [spring.x, spring.sx, spring.sy].forEach((value, n) => {
+          value.pos = value.target = n ? s : x;
+          value.vel = 0;
+          value.wait = 0;
+        });
+        this.#write(i);
+        return;
+      }
+      const far = Math.abs(i - sel);
+      const k = o.stiffness * (1 - 0.12 * Math.min(far, 3));
+      const inFlight = JellyTabsController.#moving(spring.x) || JellyTabsController.#moving(spring.sx)
+        || JellyTabsController.#moving(spring.sy);
+      const delay = inFlight ? 0 : (far * o.stagger) / 1000;
+      const j = o.jelly;
+      JellyTabsController.#aim(spring.x, x, k, 0.9, o.bounce, delay);
+      JellyTabsController.#aim(spring.sx, s, k * (1 + 0.24 * j), 0.9 - 0.1 * j, Math.min(0.85, o.bounce + 0.3 * j), delay);
+      JellyTabsController.#aim(spring.sy, s, k * (1 - 0.14 * j), 0.9 + 0.05 * j, o.bounce, delay + 0.05 * j);
+    });
+    if (jump) {
+      cancelAnimationFrame(this.#raf);
+      this.#raf = 0;
+      return;
+    }
+    if (!this.#raf) {
+      this.#last = 0;
+      this.#raf = requestAnimationFrame(t => this.#frame(t));
+    }
+  }
+
+  #write(i) {
+    const { x, sx, sy } = this.#springs[i];
+    this.#tabs[i].style.transform = `translateX(${x.pos.toFixed(2)}px) scale(${sx.pos.toFixed(4)}, ${sy.pos.toFixed(4)})`;
+  }
+
+  #frame(now) {
+    this.#raf = 0;
+    const dt = this.#last ? Math.min(0.05, (now - this.#last) / 1000) : 1 / 60;
+    this.#last = now;
+    let moving = false;
+    this.#springs.forEach((spring, i) => {
+      [spring.x, spring.sx, spring.sy].forEach(value => {
+        let left = dt;
+        if (value.wait > 0) {
+          const waited = Math.min(value.wait, left);
+          value.wait -= waited;
+          left -= waited;
+        }
+        // Small fixed steps keep the stiff springs stable
+        while (left > 0) {
+          const h = Math.min(left, 1 / 240);
+          value.vel += ((-value.k * (value.pos - value.target) - value.c * value.vel) / value.m) * h;
+          value.pos += value.vel * h;
+          left -= h;
+        }
+        if (JellyTabsController.#moving(value)) moving = true;
+        else {
+          value.pos = value.target;
+          value.vel = 0;
+        }
+      });
+      this.#write(i);
+    });
+    if (moving) this.#raf = requestAnimationFrame(t => this.#frame(t));
+  }
+}
+
 /* ── 9. APPLICATION BOOTSTRAP ── */
 
 const repository            = new PortfolioRepository(photoData, CATS);
@@ -3353,6 +3540,7 @@ const editorialMotion       = new EditorialMotionController(transitionCoordinato
 const heroFan               = new HeroFanController(transitionCoordinator);
 const scrollMotion          = new ScrollMotionController();
 const specularEdge          = new SpecularEdgeController(transitionCoordinator);
+const jellyTabs             = new JellyTabsController(transitionCoordinator);
 
 // Keep the footer copyright year current without a yearly edit
 const footerYearEl = document.getElementById('ft-year');

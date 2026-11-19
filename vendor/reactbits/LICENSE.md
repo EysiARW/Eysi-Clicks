@@ -28,5 +28,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Applies to: SpecularEdgeController in app.js (section 8d), a vanilla JavaScript port of the
-React Bits "SpecularButton" component (JavaScript + CSS variant), https://reactbits.dev.
+Applies to, in app.js (vanilla JavaScript ports of React Bits components, JavaScript + CSS
+variants, https://reactbits.dev):
+- SpecularLight and SpecularEdgeController (section 8d), from "SpecularButton"
+- JellyTabsController (section 8e), from "JellyRadio"
