@@ -120,9 +120,12 @@ html[data-theme="light"] {
   --shadow-elevated:  0 30px 70px -15px rgba(0, 0, 0, 0.16), 0 4px 16px rgba(0, 0, 0, 0.06);
   --shadow-btn-primary: 0 10px 28px -8px rgba(0, 0, 0, 0.22);
   --shadow-btn-hover:   0 16px 36px -8px rgba(0, 0, 0, 0.32);
-  /* Rim light on the hero CTA: warm champagne on the dark button, bronze hairline under it */
-  --specular-line:    #f3e7d3;
-  --specular-base:    #826a4e;
+  /* Rim light (.btn-specular). "Ink" is for filled buttons (--text fill), "paper" for
+     surface buttons. Daylight: champagne on the dark fill, bronze on the light surface. */
+  --specular-ink-line:   #f3e7d3;
+  --specular-ink-base:   #826a4e;
+  --specular-paper-line: #826a4e;
+  --specular-paper-base: #c5ad8d;
   --header-height:    5rem;
   --shutter-ease:     cubic-bezier(0.22, 1, 0.36, 1);
   --motion-ease-cinematic: cubic-bezier(0.22, 1, 0.36, 1);
@@ -199,9 +202,12 @@ html[data-theme="dark"] {
   --shadow-elevated:  0 32px 74px -12px rgba(0, 0, 0, 0.75), 0 6px 20px rgba(0, 0, 0, 0.45);
   --shadow-btn-primary: 0 10px 28px -8px rgba(0, 0, 0, 0.65);
   --shadow-btn-hover:   0 16px 36px -8px rgba(0, 0, 0, 0.85);
-  /* On the cream button a light line would vanish, so the light is bronze */
-  --specular-line:    #826a4e;
-  --specular-base:    #c5ad8d;
+  /* Darkroom flips them: a light line would vanish on the cream fill, so it is bronze there,
+     and champagne on the dark surface buttons */
+  --specular-ink-line:   #826a4e;
+  --specular-ink-base:   #c5ad8d;
+  --specular-paper-line: #f3e7d3;
+  --specular-paper-base: #826a4e;
 }
 
 .sr-only {
@@ -1026,12 +1032,58 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   }
 }
 
-/* Hero CTA rim light (SpecularEdgeController, ported from React Bits' SpecularButton). The
-   WebGL canvas reaches 24px past the button so the glow is never cut; it sits under the
-   label and arrow. The extra 1px in the inset is the button's border. */
-.btn-specular {
+/* Rim light on every button (SpecularEdgeController, ported from React Bits' SpecularButton).
+   The canvas reaches 24px past the button so the glow is never cut; it sits under the label
+   and icons. The extra 1px in the inset is the button's border. `:where` keeps the position
+   at zero specificity so fixed and absolute buttons (TOP, lightbox arrows) keep theirs.
+   Each button picks the colours that show on its own fill, and swaps them when the fill
+   changes (active tab, pressed or hovered lightbox control). */
+:where(.btn-specular) {
   position: relative;
+}
+
+.btn-specular {
   isolation: isolate;
+  --specular-line: var(--specular-ink-line);
+  --specular-base: var(--specular-ink-base);
+}
+
+.btn-specular:is(.btn-editorial-secondary, .cat-tab, .theme-toggle, .back-to-top) {
+  --specular-line: var(--specular-paper-line);
+  --specular-base: var(--specular-paper-base);
+}
+
+.btn-specular.cat-tab.active {
+  --specular-line: var(--specular-ink-line);
+  --specular-base: var(--specular-ink-base);
+}
+
+/* The lightbox is always dark: champagne on its dark glass, bronze once a control fills white */
+.btn-specular:is(.lb-tool-btn, .lightbox-close, .lightbox-nav) {
+  --specular-line: #f3e7d3;
+  --specular-base: #826a4e;
+}
+
+.btn-specular.lb-tool-btn:is(:hover, [aria-pressed="true"]),
+.btn-specular.lightbox-close:hover {
+  --specular-line: #826a4e;
+  --specular-base: #c5ad8d;
+}
+
+@media (hover: hover) {
+  .btn-specular.lightbox-nav:hover {
+    --specular-line: #826a4e;
+    --specular-base: #c5ad8d;
+  }
+}
+
+/* Close turns 90 degrees on hover; the light turns back so it stays where it was */
+.lightbox-close .specular-light {
+  transition: transform 0.25s var(--shutter-ease);
+}
+
+.lightbox-close:hover .specular-light {
+  transform: rotate(-90deg);
 }
 
 .btn-specular > :not(.specular-light) {

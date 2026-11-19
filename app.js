@@ -1600,9 +1600,12 @@ class GalleryPresenter {
   #buildStoryMore(folded, total) {
     const more = document.createElement('button');
     more.type = 'button';
-    more.className = 'story-more btn-editorial btn-editorial-secondary';
+    more.className = 'story-more btn-editorial btn-editorial-secondary btn-specular';
+    // The label has its own span so updating it never removes the rim light canvas
+    const label = document.createElement('span');
+    more.appendChild(label);
     const sync = open => {
-      more.textContent = open ? 'Show fewer photos' : `Show all ${total} photos`;
+      label.textContent = open ? 'Show fewer photos' : `Show all ${total} photos`;
       more.setAttribute('aria-expanded', String(open));
     };
     sync(false);
@@ -2767,17 +2770,21 @@ class ScrollMotionController {
 }
 
 
-/* ── 8d. SPECULAR EDGE (a light that runs along the "View the work" button's rim) ── */
+/* ── 8d. SPECULAR EDGE (a light that runs along every button's rim) ── */
 
 // A vanilla port of React Bits' SpecularButton (WebGL2 rim light). React Bits is
 // MIT + Commons Clause: free to use inside a website; the notice is in
-// vendor/reactbits/LICENSE.md. Only the light is ported: the button keeps the site's own
-// filled pill, type and hover, and the light takes its colours from --specular-line and
-// --specular-base, so it follows the Daylight / Darkroom theme.
-class SpecularEdgeController {
+// vendor/reactbits/LICENSE.md. Only the light is ported: each button keeps the site's own
+// fill, type and hover. Every `.btn-specular` gets its own 2D canvas, and one shared WebGL2
+// context draws each light and copies it in, because a page only gets a handful of WebGL
+// contexts. Colours come from --specular-line and --specular-base on each button, which the
+// CSS sets per theme, per fill and per state (hover, active tab, pressed).
+
+// One button's light: its geometry, where the light sits and how bright it is
+class SpecularLight {
   // Owner's configuration (2026-11-19), the component's defaults
   static #OPTIONS = Object.freeze({
-    radius: 9999,       // a pill: clamped to half the height
+    radius: 9999,       // pills and circles: clamped to half the height
     intensity: 1,
     idleIntensity: 0.35,
     shineSize: 10,      // degrees of rim at full strength
@@ -2787,9 +2794,225 @@ class SpecularEdgeController {
     followMouse: true,
     proximity: 250,
   });
-  static #PAD = 24;
-  static #UNIFORMS = ['uCenter', 'uHalf', 'uRadius', 'uPx', 'uSpot', 'uEntry', 'uLineColor',
-    'uBaseColor', 'uIntensity', 'uWindow', 'uThickness', 'uGlow'];
+  // The canvas reaches this far past the button so the glow is never cut
+  static PAD = 24;
+
+  #button;
+  #canvas;
+  #context;
+  #view = { width: 1, height: 1, ratio: 1 };
+  #state = { spot: 0, level: 0, press: 0, ready: false };
+  #colors = { line: [1, 1, 1], base: [0.5, 0.5, 0.5] };
+  #colorsStale = true;
+  #needsDraw = true;
+  visible = false;
+
+  constructor(button, canvas, context) {
+    this.#button = button;
+    this.#canvas = canvas;
+    this.#context = context;
+  }
+
+  get button() { return this.#button; }
+  get canvas() { return this.#canvas; }
+  get context() { return this.#context; }
+  get needsDraw() { return this.#needsDraw; }
+  get colorsStale() { return this.#colorsStale; }
+
+  static get followsPointer() {
+    return SpecularLight.#OPTIONS.followMouse;
+  }
+
+  // ── Rim geometry (ported) ──
+
+  static #wrap(value) {
+    return value - Math.floor(value);
+  }
+
+  // Where along the rim (0 … 1, counter-clockwise from the right middle) a point lies
+  static #loopPosition(x, y, halfX, halfY, r) {
+    const innerX = halfX - r;
+    const innerY = halfY - r;
+    const arc = (Math.PI / 2) * r;
+    const quarter = innerX + innerY + arc;
+    const ax = Math.abs(x);
+    const ay = Math.abs(y);
+    const qx = ax - innerX;
+    const qy = ay - innerY;
+    let s;
+    if (qx > 0 && qy > 0) s = innerY + Math.atan2(qy, qx) * r;
+    else if (qx > qy) s = Math.min(ay, innerY);
+    else s = innerY + arc + innerX - Math.min(ax, innerX);
+    if (x < 0) s = y >= 0 ? 2 * quarter - s : 2 * quarter + s;
+    else if (y < 0) s = 4 * quarter - s;
+    return SpecularLight.#wrap(s / Math.max(4 * quarter, 0.0001));
+  }
+
+  // The rim point at a given position
+  static #rimPoint(position, halfX, halfY, r) {
+    const innerX = halfX - r;
+    const innerY = halfY - r;
+    const arc = (Math.PI / 2) * r;
+    const quarter = innerX + innerY + arc;
+    let s = SpecularLight.#wrap(position) * 4 * quarter;
+    let signX = 1;
+    let signY = 1;
+    if (s > 3 * quarter) {
+      s = 4 * quarter - s;
+      signY = -1;
+    } else if (s > 2 * quarter) {
+      s -= 2 * quarter;
+      signX = -1;
+      signY = -1;
+    } else if (s > quarter) {
+      s = 2 * quarter - s;
+      signX = -1;
+    }
+    let x = innerX - (s - innerY - arc);
+    let y = halfY;
+    if (s <= innerY) {
+      x = halfX;
+      y = s;
+    } else if (s <= innerY + arc) {
+      const angle = (s - innerY) / Math.max(r, 0.0001);
+      x = innerX + Math.cos(angle) * r;
+      y = innerY + Math.sin(angle) * r;
+    }
+    return [x * signX, y * signY];
+  }
+
+  // ── State ──
+
+  measure(width, height, ratio) {
+    const pad = SpecularLight.PAD;
+    this.#view.width = Math.max(1, width);
+    this.#view.height = Math.max(1, height);
+    this.#view.ratio = ratio;
+    this.#canvas.width = Math.max(1, Math.round((this.#view.width + pad * 2) * ratio));
+    this.#canvas.height = Math.max(1, Math.round((this.#view.height + pad * 2) * ratio));
+    this.#needsDraw = true;
+  }
+
+  markColors() {
+    this.#colorsStale = true;
+  }
+
+  // A press flares the light
+  flare() {
+    this.#state.press = 1;
+  }
+
+  // Theme and state colours, resolved to RGB through a 1px 2D canvas (any CSS colour syntax)
+  readColors(probe) {
+    const style = getComputedStyle(this.#button);
+    const toRgb = (value, fallback) => {
+      if (!probe || !value) return fallback;
+      probe.clearRect(0, 0, 1, 1);
+      probe.fillStyle = '#000000';
+      probe.fillStyle = value;
+      probe.fillRect(0, 0, 1, 1);
+      const [r, g, b] = probe.getImageData(0, 0, 1, 1).data;
+      return [r / 255, g / 255, b / 255];
+    };
+    this.#colors.line = toRgb(style.getPropertyValue('--specular-line').trim(), [1, 1, 1]);
+    this.#colors.base = toRgb(style.getPropertyValue('--specular-base').trim(), [0.5, 0.5, 0.5]);
+    this.#colorsStale = false;
+    this.#needsDraw = true;
+  }
+
+  #cornerRadius() {
+    return Math.min(SpecularLight.#OPTIONS.radius, this.#view.width / 2, this.#view.height / 2);
+  }
+
+  // At rest the light sits on the upper-left curve
+  #restSpot() {
+    const r = this.#cornerRadius();
+    const inset = r * (1 - Math.SQRT1_2);
+    const { width, height } = this.#view;
+    return SpecularLight.#loopPosition(inset - width / 2, height / 2 - inset, width / 2, height / 2, r);
+  }
+
+  // The rim point nearest the pointer and how close the pointer is (0 … 1). Measured on the
+  // canvas, not the button, so a button that scales or turns on hover is still read right.
+  #aim(pointer) {
+    if (!pointer.known) return null;
+    const o = SpecularLight.#OPTIONS;
+    const rect = this.#canvas.getBoundingClientRect();
+    const scale = rect.width / (this.#view.width + SpecularLight.PAD * 2) || 1;
+    const halfX = this.#view.width / 2;
+    const halfY = this.#view.height / 2;
+    const x = (pointer.x - rect.left - rect.width / 2) / scale;
+    const y = (rect.top + rect.height / 2 - pointer.y) / scale;
+    const distance = Math.hypot(Math.max(Math.abs(x) - halfX, 0), Math.max(Math.abs(y) - halfY, 0));
+    if (distance >= o.proximity) return { spot: 0, near: 0 };
+    const t = 1 - distance / o.proximity;
+    const near = t * t * (3 - 2 * t);
+    const nearest = SpecularLight.#loopPosition(x, y, halfX, halfY, this.#cornerRadius());
+    if (distance > 0) return { spot: nearest, near };
+    // Over the button the light sways gently from its rest spot instead of jumping around
+    const depth = Math.min(1, Math.max(0, Math.min(halfX - Math.abs(x), halfY - Math.abs(y)) / (halfY * 0.8)));
+    const sway = this.#restSpot() - (x / halfX) * 0.06 - (y / halfY) * 0.02;
+    const offset = sway - nearest - Math.round(sway - nearest);
+    return { spot: SpecularLight.#wrap(nearest + offset * depth * depth * (3 - 2 * depth)), near };
+  }
+
+  // Moves the light one frame towards where it wants to be; true while it is still moving
+  step(dt, pointer, follow) {
+    const o = SpecularLight.#OPTIONS;
+    const state = this.#state;
+    const target = follow ? this.#aim(pointer) : null;
+    const steering = Boolean(target) && target.near > 0;
+    if (!state.ready) {
+      state.spot = this.#restSpot();
+      state.level = o.idleIntensity;
+      state.ready = true;
+      this.#needsDraw = true;
+    }
+    let diff = (steering ? target.spot : this.#restSpot()) - state.spot;
+    diff -= Math.round(diff);
+    state.spot = SpecularLight.#wrap(state.spot + diff * (1 - Math.exp(-dt * 8)));
+    const level = o.idleIntensity + (1 - o.idleIntensity) * (target ? target.near : 0);
+    state.level += (level - state.level) * (1 - Math.exp(-dt * 7));
+    state.press *= Math.exp(-dt * 5);
+    const moving = Math.abs(diff) > 0.0002 || Math.abs(level - state.level) > 0.001 || state.press > 0.002;
+    if (moving) this.#needsDraw = true;
+    return moving;
+  }
+
+  // Shader inputs, in canvas pixels
+  uniforms() {
+    const o = SpecularLight.#OPTIONS;
+    const pad = SpecularLight.PAD;
+    const { width, height, ratio } = this.#view;
+    const scaleX = this.#canvas.width / (width + pad * 2);
+    const scaleY = this.#canvas.height / (height + pad * 2);
+    const r = this.#cornerRadius();
+    const [rimX, rimY] = SpecularLight.#rimPoint(this.#state.spot, width / 2, height / 2, r);
+    const reach = Math.max(Math.hypot(rimX, rimY), 0.0001);
+    const pull = 1 - Math.min(0.35 * (height / 2), reach) / reach;
+    return {
+      center: [(pad + width / 2) * scaleX, (pad + height / 2) * scaleY],
+      half: [(width / 2) * scaleX, (height / 2) * scaleY],
+      radius: r * scaleX,
+      px: ratio,
+      spot: this.#state.spot,
+      entry: [rimX * pull * scaleX, rimY * pull * scaleY],
+      line: this.#colors.line,
+      base: this.#colors.base,
+      intensity: o.intensity * (this.#state.level + this.#state.press * 0.8),
+      window: [o.shineSize / 360 + this.#state.press * 0.06, o.shineFade / 360 + 0.0001],
+      thickness: o.thickness,
+      glow: o.glow,
+    };
+  }
+
+  drawn() {
+    this.#needsDraw = false;
+  }
+}
+
+// Finds every `.btn-specular`, owns the shared WebGL2 context and runs one frame loop for all
+class SpecularEdgeController {
   static #VERTEX = `#version 300 es
 in vec2 aPosition;
 void main() {
@@ -2853,105 +3076,42 @@ void main() {
   outColor = vec4(uLineColor, 1.0) * light + base * (1.0 - light);
 }`;
 
-  #button;
-  #canvas;
+  #transitionCoordinator;
   #gl = null;
+  #glCanvas = null;
   #program = null;
   #vao = null;
   #uniforms = {};
-  #transitionCoordinator;
-  #view = { width: 1, height: 1, ratio: 1 };
+  #probe = null;
+  #lights = new Map();
   #pointer = { x: 0, y: 0, known: false };
-  #state = { spot: 0, level: 0, press: 0, ready: false };
-  #colors = { line: [1, 1, 1], base: [0.5, 0.5, 0.5] };
   #raf = 0;
   #last = 0;
-  #visible = true;
+  #observers = [];
+  #resizeObserver = null;
+  #viewObserver = null;
+  #stateObserver = null;
 
   constructor(transitionCoordinator) {
     this.#transitionCoordinator = transitionCoordinator;
-    this.#button = document.querySelector('.hero-cta-group .btn-specular');
-    if (!this.#button || typeof requestAnimationFrame !== 'function'
+    if (!document.querySelector('.btn-specular') || typeof requestAnimationFrame !== 'function'
       || typeof ResizeObserver !== 'function') return;
-    const canvas = document.createElement('canvas');
-    if (typeof canvas.getContext !== 'function') return;
-    const gl = canvas.getContext('webgl2', {
+    const glCanvas = document.createElement('canvas');
+    if (typeof glCanvas.getContext !== 'function') return;
+    // preserveDrawingBuffer keeps each light readable until it has been copied to its button
+    const gl = glCanvas.getContext('webgl2', {
       alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false,
+      preserveDrawingBuffer: true,
     });
     if (!gl || !this.#link(gl)) return;
-    canvas.className = 'specular-light';
-    canvas.setAttribute('aria-hidden', 'true');
-    // If the browser reclaims the GPU context, the button simply goes back to its plain pill
-    canvas.addEventListener('webglcontextlost', () => {
-      cancelAnimationFrame(this.#raf);
-      this.#raf = 0;
-      this.#visible = false;
-      canvas.remove();
-    });
-    this.#button.prepend(canvas);
-    this.#canvas = canvas;
+    // If the browser reclaims the GPU context, every button simply goes back to its plain look
+    glCanvas.addEventListener('webglcontextlost', () => this.#teardown());
     this.#gl = gl;
-    this.#readColors();
-    this.#bind();
-    this.#measure();
-  }
-
-  // ── Rim geometry (ported) ──
-
-  static #wrap(value) {
-    return value - Math.floor(value);
-  }
-
-  // Where along the rim (0 … 1, counter-clockwise from the right middle) a point lies
-  static #loopPosition(x, y, halfX, halfY, r) {
-    const innerX = halfX - r;
-    const innerY = halfY - r;
-    const arc = (Math.PI / 2) * r;
-    const quarter = innerX + innerY + arc;
-    const ax = Math.abs(x);
-    const ay = Math.abs(y);
-    const qx = ax - innerX;
-    const qy = ay - innerY;
-    let s;
-    if (qx > 0 && qy > 0) s = innerY + Math.atan2(qy, qx) * r;
-    else if (qx > qy) s = Math.min(ay, innerY);
-    else s = innerY + arc + innerX - Math.min(ax, innerX);
-    if (x < 0) s = y >= 0 ? 2 * quarter - s : 2 * quarter + s;
-    else if (y < 0) s = 4 * quarter - s;
-    return SpecularEdgeController.#wrap(s / Math.max(4 * quarter, 0.0001));
-  }
-
-  // The rim point at a given position
-  static #rimPoint(position, halfX, halfY, r) {
-    const innerX = halfX - r;
-    const innerY = halfY - r;
-    const arc = (Math.PI / 2) * r;
-    const quarter = innerX + innerY + arc;
-    let s = SpecularEdgeController.#wrap(position) * 4 * quarter;
-    let signX = 1;
-    let signY = 1;
-    if (s > 3 * quarter) {
-      s = 4 * quarter - s;
-      signY = -1;
-    } else if (s > 2 * quarter) {
-      s -= 2 * quarter;
-      signX = -1;
-      signY = -1;
-    } else if (s > quarter) {
-      s = 2 * quarter - s;
-      signX = -1;
-    }
-    let x = innerX - (s - innerY - arc);
-    let y = halfY;
-    if (s <= innerY) {
-      x = halfX;
-      y = s;
-    } else if (s <= innerY + arc) {
-      const angle = (s - innerY) / Math.max(r, 0.0001);
-      x = innerX + Math.cos(angle) * r;
-      y = innerY + Math.sin(angle) * r;
-    }
-    return [x * signX, y * signY];
+    this.#glCanvas = glCanvas;
+    this.#probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    this.#observe();
+    this.#bindPointer();
+    this.#adopt(document);
   }
 
   // ── WebGL setup ──
@@ -2981,7 +3141,8 @@ void main() {
       gl.deleteProgram(program);
       return false;
     }
-    SpecularEdgeController.#UNIFORMS.forEach(name => {
+    ['uCenter', 'uHalf', 'uRadius', 'uPx', 'uSpot', 'uEntry', 'uLineColor', 'uBaseColor',
+      'uIntensity', 'uWindow', 'uThickness', 'uGlow'].forEach(name => {
       this.#uniforms[name] = gl.getUniformLocation(program, name);
     });
     // One triangle that covers the whole canvas
@@ -2998,143 +3159,108 @@ void main() {
     return true;
   }
 
-  // Theme colours, resolved to RGB through a 1px 2D canvas (handles any CSS colour syntax)
-  #readColors() {
-    const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
-    const style = getComputedStyle(this.#button);
-    const toRgb = (value, fallback) => {
-      if (!probe || !value) return fallback;
-      probe.clearRect(0, 0, 1, 1);
-      probe.fillStyle = '#000000';
-      probe.fillStyle = value;
-      probe.fillRect(0, 0, 1, 1);
-      const [r, g, b] = probe.getImageData(0, 0, 1, 1).data;
-      return [r / 255, g / 255, b / 255];
-    };
-    this.#colors.line = toRgb(style.getPropertyValue('--specular-line').trim(), [1, 1, 1]);
-    this.#colors.base = toRgb(style.getPropertyValue('--specular-base').trim(), [0.5, 0.5, 0.5]);
-  }
+  // ── Buttons ──
 
-  // ── Light behaviour (ported) ──
-
-  #cornerRadius() {
-    return Math.min(SpecularEdgeController.#OPTIONS.radius, this.#view.width / 2, this.#view.height / 2);
-  }
-
-  // At rest the light sits on the upper-left curve
-  #restSpot() {
-    const r = this.#cornerRadius();
-    const inset = r * (1 - Math.SQRT1_2);
-    const { width, height } = this.#view;
-    return SpecularEdgeController.#loopPosition(inset - width / 2, height / 2 - inset, width / 2, height / 2, r);
-  }
-
-  // The rim point nearest the pointer and how close the pointer is (0 … 1)
-  #aim() {
-    const o = SpecularEdgeController.#OPTIONS;
-    if (!o.followMouse || !this.#pointer.known || this.#transitionCoordinator?.prefersReducedMotion) return null;
-    const rect = this.#button.getBoundingClientRect();
-    const scale = rect.width / this.#view.width || 1;
-    const halfX = this.#view.width / 2;
-    const halfY = this.#view.height / 2;
-    const x = (this.#pointer.x - rect.left - rect.width / 2) / scale;
-    const y = (rect.top + rect.height / 2 - this.#pointer.y) / scale;
-    const distance = Math.hypot(Math.max(Math.abs(x) - halfX, 0), Math.max(Math.abs(y) - halfY, 0));
-    const t = Math.min(1, Math.max(0, 1 - distance / o.proximity));
-    const near = t * t * (3 - 2 * t);
-    const nearest = SpecularEdgeController.#loopPosition(x, y, halfX, halfY, this.#cornerRadius());
-    if (distance > 0) return { spot: nearest, near };
-    // Over the button the light sways gently from its rest spot instead of jumping around
-    const depth = Math.min(1, Math.max(0, Math.min(halfX - Math.abs(x), halfY - Math.abs(y)) / (halfY * 0.8)));
-    const sway = this.#restSpot() - (x / halfX) * 0.06 - (y / halfY) * 0.02;
-    const offset = sway - nearest - Math.round(sway - nearest);
-    return { spot: SpecularEdgeController.#wrap(nearest + offset * depth * depth * (3 - 2 * depth)), near };
-  }
-
-  #draw() {
-    const o = SpecularEdgeController.#OPTIONS;
-    const gl = this.#gl;
-    const u = this.#uniforms;
-    const pad = SpecularEdgeController.#PAD;
-    const { width, height } = this.#view;
-    const scaleX = this.#canvas.width / (width + pad * 2);
-    const scaleY = this.#canvas.height / (height + pad * 2);
-    gl.viewport(0, 0, this.#canvas.width, this.#canvas.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(this.#program);
-    gl.uniform2f(u.uCenter, (pad + width / 2) * scaleX, (pad + height / 2) * scaleY);
-    gl.uniform2f(u.uHalf, (width / 2) * scaleX, (height / 2) * scaleY);
-    const r = this.#cornerRadius();
-    gl.uniform1f(u.uRadius, r * scaleX);
-    gl.uniform1f(u.uPx, this.#view.ratio);
-    const [rimX, rimY] = SpecularEdgeController.#rimPoint(this.#state.spot, width / 2, height / 2, r);
-    const reach = Math.max(Math.hypot(rimX, rimY), 0.0001);
-    const pull = 1 - Math.min(0.35 * (height / 2), reach) / reach;
-    gl.uniform1f(u.uSpot, this.#state.spot);
-    gl.uniform2f(u.uEntry, rimX * pull * scaleX, rimY * pull * scaleY);
-    gl.uniform3fv(u.uLineColor, this.#colors.line);
-    gl.uniform3fv(u.uBaseColor, this.#colors.base);
-    gl.uniform1f(u.uIntensity, o.intensity * (this.#state.level + this.#state.press * 0.8));
-    gl.uniform2f(u.uWindow, o.shineSize / 360 + this.#state.press * 0.06, o.shineFade / 360 + 0.0001);
-    gl.uniform1f(u.uThickness, o.thickness);
-    gl.uniform1f(u.uGlow, o.glow);
-    gl.bindVertexArray(this.#vao);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.bindVertexArray(null);
-  }
-
-  #frame(now) {
-    this.#raf = 0;
-    if (!this.#visible) return;
-    const o = SpecularEdgeController.#OPTIONS;
-    const state = this.#state;
-    const dt = this.#last ? Math.min(0.05, (now - this.#last) / 1000) : 1 / 60;
-    this.#last = now;
-    const target = this.#aim();
-    const steering = Boolean(target) && target.near > 0;
-    if (!state.ready) {
-      state.spot = this.#restSpot();
-      state.level = o.idleIntensity;
-      state.ready = true;
+  #observe() {
+    this.#resizeObserver = new ResizeObserver(entries => {
+      entries.forEach(entry => this.#measure(entry));
+      this.#wake();
+    });
+    if (typeof IntersectionObserver === 'function') {
+      this.#viewObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          const light = this.#lights.get(entry.target);
+          if (light) light.visible = entry.isIntersecting;
+        });
+        this.#last = 0;
+        this.#wake();
+      });
     }
-    let diff = (steering ? target.spot : this.#restSpot()) - state.spot;
-    diff -= Math.round(diff);
-    state.spot = SpecularEdgeController.#wrap(state.spot + diff * (1 - Math.exp(-dt * 8)));
-    const level = o.idleIntensity + (1 - o.idleIntensity) * (target ? target.near : 0);
-    state.level += (level - state.level) * (1 - Math.exp(-dt * 7));
-    state.press *= Math.exp(-dt * 5);
-    this.#draw();
-    const settling = Math.abs(diff) > 0.0002 || Math.abs(level - state.level) > 0.001 || state.press > 0.002;
-    if (settling) this.#raf = requestAnimationFrame(t => this.#frame(t));
-    else this.#last = 0;
+    if (typeof MutationObserver !== 'function') return;
+    // An active tab or a pressed control changes fill, so it needs the other colours
+    this.#stateObserver = new MutationObserver(records => {
+      records.forEach(record => this.#lights.get(record.target)?.markColors());
+      this.#wake();
+    });
+    // Daylight / Darkroom swap every light's colours
+    const theme = new MutationObserver(() => {
+      this.#lights.forEach(light => light.markColors());
+      this.#wake();
+    });
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    this.#observers.push(theme);
+    // "Show all photos" buttons are built when a category is first opened
+    const gallery = document.getElementById('gallery');
+    if (gallery) {
+      const later = new MutationObserver(() => this.#adopt(gallery));
+      later.observe(gallery, { childList: true, subtree: true });
+      this.#observers.push(later);
+    }
   }
 
-  #wake() {
-    if (!this.#raf && this.#visible && this.#canvas?.isConnected) this.#raf = requestAnimationFrame(t => this.#frame(t));
+  #adopt(root) {
+    this.#lights.forEach((light, button) => {
+      if (button.isConnected) return;
+      this.#resizeObserver.unobserve(button);
+      this.#viewObserver?.unobserve(button);
+      this.#lights.delete(button);
+    });
+    root.querySelectorAll('.btn-specular').forEach(button => {
+      if (!this.#lights.has(button)) this.#attach(button);
+    });
+  }
+
+  #attach(button) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    canvas.className = 'specular-light';
+    canvas.setAttribute('aria-hidden', 'true');
+    button.prepend(canvas);
+    const light = new SpecularLight(button, canvas, context);
+    light.visible = !this.#viewObserver;
+    this.#lights.set(button, light);
+    button.addEventListener('pointerdown', event => {
+      this.#track(event);
+      if (!this.#transitionCoordinator?.prefersReducedMotion) light.flare();
+      this.#wake();
+    });
+    // Some buttons fill in on hover, which needs the other colours
+    const restyle = () => {
+      light.markColors();
+      this.#wake();
+    };
+    button.addEventListener('pointerenter', restyle);
+    button.addEventListener('pointerleave', restyle);
+    this.#resizeObserver.observe(button);
+    this.#viewObserver?.observe(button);
+    this.#stateObserver?.observe(button, { attributes: true, attributeFilter: ['class', 'aria-pressed'] });
   }
 
   #measure(entry) {
-    const box = entry?.borderBoxSize?.[0];
-    const pad = SpecularEdgeController.#PAD;
-    this.#view.width = Math.max(1, box ? box.inlineSize : this.#button.offsetWidth);
-    this.#view.height = Math.max(1, box ? box.blockSize : this.#button.offsetHeight);
-    this.#view.ratio = Math.min(window.devicePixelRatio || 1, 3);
-    this.#canvas.width = Math.max(1, Math.round((this.#view.width + pad * 2) * this.#view.ratio));
-    this.#canvas.height = Math.max(1, Math.round((this.#view.height + pad * 2) * this.#view.ratio));
-    if (this.#state.ready && this.#canvas.isConnected) this.#draw();
-    this.#wake();
+    const light = this.#lights.get(entry.target);
+    if (!light) return;
+    const box = entry.borderBoxSize?.[0];
+    const ratio = Math.min(window.devicePixelRatio || 1, 3);
+    light.measure(box ? box.inlineSize : entry.target.offsetWidth,
+      box ? box.blockSize : entry.target.offsetHeight, ratio);
+    // The shared canvas only ever grows to fit the largest light
+    const glCanvas = this.#glCanvas;
+    if (light.canvas.width > glCanvas.width) glCanvas.width = light.canvas.width;
+    if (light.canvas.height > glCanvas.height) glCanvas.height = light.canvas.height;
   }
 
-  #bind() {
-    const button = this.#button;
-    const track = event => {
-      this.#pointer.x = event.clientX;
-      this.#pointer.y = event.clientY;
-      this.#pointer.known = true;
-    };
+  // ── Pointer and frame loop ──
+
+  #track(event) {
+    this.#pointer.x = event.clientX;
+    this.#pointer.y = event.clientY;
+    this.#pointer.known = true;
+  }
+
+  #bindPointer() {
     window.addEventListener('pointermove', event => {
-      track(event);
+      this.#track(event);
       this.#wake();
     }, { passive: true });
     const release = event => {
@@ -3148,29 +3274,69 @@ void main() {
       this.#pointer.known = false;
       this.#wake();
     });
-    // A press flares the light
-    button.addEventListener('pointerdown', event => {
-      track(event);
-      this.#state.press = 1;
-      this.#wake();
+  }
+
+  #wake() {
+    if (!this.#raf && this.#gl && this.#lights.size) this.#raf = requestAnimationFrame(t => this.#frame(t));
+  }
+
+  #frame(now) {
+    this.#raf = 0;
+    if (!this.#gl) return;
+    const dt = this.#last ? Math.min(0.05, (now - this.#last) / 1000) : 1 / 60;
+    this.#last = now;
+    const follow = SpecularLight.followsPointer && !this.#transitionCoordinator?.prefersReducedMotion;
+    let moving = false;
+    this.#lights.forEach(light => {
+      if (!light.visible || !light.canvas.isConnected) return;
+      if (light.colorsStale) light.readColors(this.#probe);
+      if (light.step(dt, this.#pointer, follow)) moving = true;
+      if (light.needsDraw) this.#draw(light);
     });
-    new ResizeObserver(entries => this.#measure(entries[entries.length - 1])).observe(button);
-    if (typeof IntersectionObserver === 'function') {
-      new IntersectionObserver(entries => {
-        this.#visible = entries.some(e => e.isIntersecting) && this.#canvas.isConnected;
-        if (this.#visible) {
-          this.#last = 0;
-          this.#wake();
-        }
-      }).observe(button);
-    }
-    // Daylight / Darkroom swap the light's colours
-    if (typeof MutationObserver === 'function') {
-      new MutationObserver(() => {
-        this.#readColors();
-        if (this.#state.ready && this.#canvas.isConnected) this.#draw();
-      }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    }
+    if (moving) this.#raf = requestAnimationFrame(t => this.#frame(t));
+    else this.#last = 0;
+  }
+
+  #draw(light) {
+    const gl = this.#gl;
+    const u = this.#uniforms;
+    const v = light.uniforms();
+    const { width, height } = light.canvas;
+    gl.viewport(0, 0, width, height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(this.#program);
+    gl.uniform2f(u.uCenter, v.center[0], v.center[1]);
+    gl.uniform2f(u.uHalf, v.half[0], v.half[1]);
+    gl.uniform1f(u.uRadius, v.radius);
+    gl.uniform1f(u.uPx, v.px);
+    gl.uniform1f(u.uSpot, v.spot);
+    gl.uniform2f(u.uEntry, v.entry[0], v.entry[1]);
+    gl.uniform3fv(u.uLineColor, v.line);
+    gl.uniform3fv(u.uBaseColor, v.base);
+    gl.uniform1f(u.uIntensity, v.intensity);
+    gl.uniform2f(u.uWindow, v.window[0], v.window[1]);
+    gl.uniform1f(u.uThickness, v.thickness);
+    gl.uniform1f(u.uGlow, v.glow);
+    gl.bindVertexArray(this.#vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    // WebGL draws from the bottom-left corner; copy that corner into the button's canvas
+    light.context.clearRect(0, 0, width, height);
+    light.context.drawImage(this.#glCanvas, 0, this.#glCanvas.height - height, width, height, 0, 0, width, height);
+    light.drawn();
+  }
+
+  #teardown() {
+    cancelAnimationFrame(this.#raf);
+    this.#raf = 0;
+    this.#gl = null;
+    this.#resizeObserver?.disconnect();
+    this.#viewObserver?.disconnect();
+    this.#stateObserver?.disconnect();
+    this.#observers.forEach(observer => observer.disconnect());
+    this.#lights.forEach(light => light.canvas.remove());
+    this.#lights.clear();
   }
 }
 
