@@ -1781,7 +1781,9 @@ html[data-theme="dark"] .about-img-inner {
   text-transform: uppercase;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: transform 0.3s var(--shutter-ease), box-shadow 0.3s var(--shutter-ease), background-color 0.3s var(--shutter-ease), border-color 0.3s var(--shutter-ease), color 0.3s var(--shutter-ease), opacity 0.3s var(--shutter-ease);
+  /* No `transform` here: JellyTabsController drives it every frame. The hover lift and the
+     press use the separate `translate` and `scale` properties, which combine with it. */
+  transition: translate 0.3s var(--shutter-ease), scale 0.16s var(--shutter-ease), box-shadow 0.3s var(--shutter-ease), background-color 0.3s var(--shutter-ease), border-color 0.3s var(--shutter-ease), color 0.3s var(--shutter-ease), opacity 0.3s var(--shutter-ease);
   white-space: nowrap;
   touch-action: manipulation;
   user-select: none;
@@ -1797,7 +1799,20 @@ html[data-theme="dark"] .about-img-inner {
 }
 
 .cat-tab:active {
-  transform: scale(0.98);
+  scale: 0.98;
+}
+
+/* Jelly tabs: the chosen tab swells over its neighbours if a cramped row makes them touch */
+.cat-tabs.is-jelly .cat-tab.active {
+  z-index: 1;
+}
+
+/* When the tabs wrap (phones), the chosen tab grows about 4px up and down, so the rows get
+   that much more space between them */
+@media (max-width: 768px) {
+  .cat-tabs.is-jelly {
+    row-gap: calc(0.45rem + 0.5rem);
+  }
 }
 
 .cat-tab-name {
@@ -1840,7 +1855,7 @@ html[data-theme="dark"] .cat-tab.active .cat-tab-count {
 @media (hover: hover) {
   .cat-tab:not(.active):hover {
     border-color: var(--text);
-    transform: translateY(-2px);
+    translate: 0 -2px;
     box-shadow: var(--shadow-btn-hover);
   }
 }
