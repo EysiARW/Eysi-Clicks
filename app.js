@@ -22,40 +22,40 @@ const photoData = {
 
   predebut: {
     portrait: [
-      { src: "predebut/portrait/EYSI-2-22.jpg", caption: "Avegail @18", alt: "Debutante in an off-shoulder ivory gown seated gracefully outdoors in golden natural light" },
-      { src: "predebut/portrait/EYSI-5-5.jpg", caption: "Trisha @20", alt: "Portrait of a smiling young woman outdoors in soft evening sunlight" },
-      { src: "predebut/portrait/EYSI-6-3.jpg", caption: "Anne @20", alt: "Close-up portrait of a young woman in an outdoor natural light setting" },
-      { src: "predebut/portrait/EYSI-7-3.jpg", caption: "Anne @20", alt: "Portrait of a smiling young woman with lush green foliage background" },
+      { src: "predebut/portrait/EYSI-2-22.jpg", caption: "Avegail @18", alt: "Debutante in a pink satin gown and long gloves holding pink and white roses in front of a garden fountain" },
+      { src: "predebut/portrait/EYSI-5-5.jpg", caption: "Trisha @20", alt: "Young woman in a black off-shoulder top seated outdoors, gazing past the camera with trees behind her" },
+      { src: "predebut/portrait/EYSI-6-3.jpg", caption: "Anne @20", alt: "Young woman in a white dress holding a small bouquet against a stone wall beside a wooden door" },
+      { src: "predebut/portrait/EYSI-7-3.jpg", caption: "Anne @20", alt: "Young woman in a white dress seated on garden rocks beside a weathered wooden fence" },
       { src: "predebut/portrait/EYSI-8-3.jpg", caption: "Anne @20", alt: "Candid outdoor portrait of a young woman bathed in soft daylight" }
     ],
     landscape: [
-      { src: "predebut/landscape/EYSI-1-62.jpg", caption: "Avegail @18", alt: "Young woman in an elegant evening gown walking through an outdoor landscaped garden" },
-      { src: "predebut/landscape/EYSI-3-16.jpg", caption: "Avegail @18", alt: "Wide shot of a debutante posed in an evening gown outdoors during sunset" },
-      { src: "predebut/landscape/EYSI-4-9.jpg", caption: "Trisha @20", alt: "Outdoor portrait of a young woman posed gracefully in warm ambient light" }
+      { src: "predebut/landscape/EYSI-1-62.jpg", caption: "Avegail @18", alt: "Debutante in a pink satin gown and long gloves resting a hand on a railing among leafy trees" },
+      { src: "predebut/landscape/EYSI-3-16.jpg", caption: "Avegail @18", alt: "Debutante in a pink satin dress spreading her gloved arms along a railing above a pool and garden" },
+      { src: "predebut/landscape/EYSI-4-9.jpg", caption: "Trisha @20", alt: "Young woman in a black off-shoulder top framed by soft out-of-focus leaves" }
     ],
   },
 
   events: {
     portrait: [
-      { src: "events/portrait/EYSI-7-3.jpg", caption: "Eddie @75", alt: "Portrait of an elderly celebrant smiling warmly at a milestone birthday gathering" },
-      { src: "events/portrait/EYSI-8-3.jpg", caption: "Eddie @75", alt: "Candid portrait of an elderly man celebrating a milestone surrounded by family" }
+      { src: "events/portrait/EYSI-7-3.jpg", caption: "Eddie @75", alt: "Eddie in a light blue shirt standing beside his blue birthday cake and the Eddie @75 sign" },
+      { src: "events/portrait/EYSI-8-3.jpg", caption: "Eddie @75", alt: "Eddie embraced by a smiling woman in front of a gold, white and navy balloon wall" }
     ],
     landscape: [
-      { src: "events/landscape/EYSI-1-62.jpg", caption: "Pulo Ati-Atihan", alt: "Festival performers dancing in vibrant colorful feathered headdresses and traditional attire" },
-      { src: "events/landscape/EYSI-1.jpg", caption: "Khel Pangilinan", alt: "Gathering of friends and celebrants smiling together at a celebration" },
-      { src: "events/landscape/EYSI-2-22.jpg", caption: "Pulo Ati-Atihan", alt: "Street dancers in ornate headdresses performing energetically during a cultural festival" },
-      { src: "events/landscape/EYSI-3-16.jpg", caption: "Pulo Ati-Atihan", alt: "Vibrant festival dancers in traditional regalia participating in a street parade" },
-      { src: "events/landscape/EYSI-4-9.jpg", caption: "Pulo Ati-Atihan", alt: "Dynamic group portrait of cultural festival performers in elaborate costumes" },
-      { src: "events/landscape/EYSI-5-5.jpg", caption: "Eddie @75", alt: "Celebrant seated with family and guests at a milestone banquet celebration" },
-      { src: "events/landscape/EYSI-5.jpg", caption: "Khel Pangilinan", alt: "Event guests conversing and smiling warmly during an evening reception" },
-      { src: "events/landscape/EYSI-6-3.jpg", caption: "Eddie @75", alt: "Family members gathered around a celebration table sharing a joyful moment" },
-      { src: "events/landscape/EYSI-9.jpg", caption: "Khel Pangilinan", alt: "Candid moment of event attendees socializing and laughing together" },
-      { src: "events/landscape/EYSI-12.jpg", caption: "Khel Pangilinan", alt: "Group of smiling guests posing together at an celebratory event" },
+      { src: "events/landscape/EYSI-1-62.jpg", caption: "Pulo Ati-Atihan", alt: "Young man with face paint and blackened hands touching a red-painted sign during the street festival" },
+      { src: "events/landscape/EYSI-1.jpg", caption: "Khel Pangilinan", alt: "Singer in sunglasses and a denim jacket singing with a hand on his chest under pink and green stage lights" },
+      { src: "events/landscape/EYSI-2-22.jpg", caption: "Pulo Ati-Atihan", alt: "Black-and-white street scene of smiling festival-goers with face paint as a Santo Niño statue is raised above the crowd" },
+      { src: "events/landscape/EYSI-3-16.jpg", caption: "Pulo Ati-Atihan", alt: "Festival performer in white body paint with a black spider design and a fringed skirt walking through the crowd" },
+      { src: "events/landscape/EYSI-4-9.jpg", caption: "Pulo Ati-Atihan", alt: "Woman in white photographing the procession with her phone while holding a Santo Niño statue in a green robe" },
+      { src: "events/landscape/EYSI-5-5.jpg", caption: "Eddie @75", alt: "Three young women in light blue dresses posing on a tufted armchair before the Eddie @75 backdrop" },
+      { src: "events/landscape/EYSI-5.jpg", caption: "Khel Pangilinan", alt: "Singer in a denim jacket and sunglasses performing beside a guitarist under bright stage lights" },
+      { src: "events/landscape/EYSI-6-3.jpg", caption: "Eddie @75", alt: "Eddie seated in a tufted armchair in front of the glowing Eddie @75 sign" },
+      { src: "events/landscape/EYSI-9.jpg", caption: "Khel Pangilinan", alt: "Singer in sunglasses and a denim jacket raising both arms to the crowd under bright yellow stage lights" },
+      { src: "events/landscape/EYSI-12.jpg", caption: "Khel Pangilinan", alt: "Singer in sunglasses and a denim jacket performing into a microphone under purple and green stage lights" },
       { src: "events/landscape/EYSI-19.jpg", caption: "Eddie @75", alt: "Illuminated neon Happy Birthday sign behind a blue milestone cake with gold candles" },
       { src: "events/landscape/EYSI-5-e75.jpg", caption: "Eddie @75", alt: "Matriarch in white lace seated gracefully in a tufted armchair surrounded by balloons" },
       { src: "events/landscape/EYSI-45.jpg", caption: "Eddie @75", alt: "Celebrant Eddie waving joyfully to cheering guests upon his grand entrance" },
       { src: "events/landscape/EYSI-53.jpg", caption: "Eddie @75", alt: "Daughter tenderly cupping Eddie's cheek during an affectionate embrace" },
-      { src: "events/landscape/EYSI-57.jpg", caption: "Eddie @75", alt: "Eddie and his partner walking hand-in-hand smiling warmly at guests" },
+      { src: "events/landscape/EYSI-57.jpg", caption: "Eddie @75", alt: "Eddie in a blue cap standing arm in arm with an older woman in white lace near the buffet" },
       { src: "events/landscape/EYSI-77.jpg", caption: "Eddie @75", alt: "Eddie blowing out his birthday candles as delicate smoke drifts before a glowing neon sign" },
       { src: "events/landscape/EYSI-78.jpg", caption: "Eddie @75", alt: "Celebrant Eddie addressing his family and guests with a microphone from his armchair" },
       { src: "events/landscape/EYSI-100.jpg", caption: "Eddie @75", alt: "Eddie smiling joyfully as he opens a lucky red envelope during the celebration" },
@@ -66,14 +66,14 @@ const photoData = {
 
   institutional: {
     landscape: [
-      { src: "institutional/EYSI-32.jpg", caption: "Baccalaureate Mass", alt: "Graduates and faculty gathered in formal attire during a baccalaureate mass" },
-      { src: "institutional/EYSI-37.jpg", caption: "Baccalaureate Mass", alt: "Academic procession of graduates and university faculty in church ceremonies" },
-      { src: "institutional/EYSI-41.jpg", caption: "Baccalaureate Mass", alt: "Students and attendees standing solemnly during a formal academic ceremony" },
-      { src: "institutional/EYSI-55.jpg", caption: "Baccalaureate Mass", alt: "Large gathering of graduates and educators attending a formal university service" },
-      { src: "institutional/EYSI-109.jpg", caption: "UC - PNC Foundation Week 2026", alt: "University students and faculty participating in outdoor foundation week celebrations" },
-      { src: "institutional/EYSI-145.jpg", caption: "UC - PNC Foundation Week 2026", alt: "Campus community gathered outdoors during an institutional celebration" },
-      { src: "institutional/EYSI-152.jpg", caption: "UC - PNC Foundation Week 2026", alt: "Group of students in university uniform smiling during campus festivities" },
-      { src: "institutional/EYSI-189.jpg", caption: "UC - PNC Foundation Week 2026", alt: "Wide view of university grounds with students and staff celebrating foundation week" },
+      { src: "institutional/EYSI-32.jpg", caption: "Baccalaureate Mass", alt: "Minister in white holding up a communion host over a gold ciborium during the mass" },
+      { src: "institutional/EYSI-37.jpg", caption: "Baccalaureate Mass", alt: "Students in Filipiniana attire talking at red-draped banquet tables" },
+      { src: "institutional/EYSI-41.jpg", caption: "Baccalaureate Mass", alt: "Students laughing and clapping at a banquet table set with red cloths and glassware" },
+      { src: "institutional/EYSI-55.jpg", caption: "Baccalaureate Mass", alt: "Smiling student holding certificates of recognition beside a classmate in a barong" },
+      { src: "institutional/EYSI-109.jpg", caption: "UC - PNC Foundation Week 2026", alt: "Black-and-white photo of a dancer lying back on the floor with one fist raised as another dancer stretches behind" },
+      { src: "institutional/EYSI-145.jpg", caption: "UC - PNC Foundation Week 2026", alt: "Folk dancer in a blue gown dipped by her partner in a vest and hat as the crowd watches from the stands" },
+      { src: "institutional/EYSI-152.jpg", caption: "UC - PNC Foundation Week 2026", alt: "Black-and-white photo of a dancer in a white suit kicking high during a performance in the gym" },
+      { src: "institutional/EYSI-189.jpg", caption: "UC - PNC Foundation Week 2026", alt: "Black-and-white photo of a cheerleader mid-air in a toe-touch jump before a packed gym" },
       { src: "institutional/EYSI-1.jpg", caption: "Academic Excellence Award", alt: "Wide view of an awards hall with a lit stage, banner and decorated banquet tables" },
       { src: "institutional/EYSI-21.jpg", caption: "Academic Excellence Award", alt: "Guest raising a phone to photograph the awards ceremony in a softly lit hall" },
       { src: "institutional/EYSI-26.jpg", caption: "Academic Excellence Award", alt: "Live band in matching mint outfits performing on stage during the awards night" },
