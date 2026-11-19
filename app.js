@@ -2064,15 +2064,18 @@ class EditorialMotionController {
 // for finished websites); the full text is in vendor/reactdrops/LICENSE.txt.
 class HeroFanController {
   // The owner's configuration (2026-11-19). Distances are in layout pixels before fitting.
+  // From 960px the hero has two columns: cards are larger there, and the deck is dealt from
+  // the right so the cards never cross the headline (see #currentConfig).
   static #OPTIONS = Object.freeze({
     cardWidth: 162,
+    wideCardWidth: 200,
     aspectRatio: 0.8,
     spacing: 0.69,     // distance between card centres, as a fraction of the card width
     curve: 0.2,        // how far the outer cards drop, as a fraction of the card height
     tilt: 14.5,        // degrees the outer cards lean outward
     lift: 42,          // pixels the hovered card rises
     spread: 0.2,       // extra gap opened beside the hovered card, in card widths
-    stackFrom: 'left', // this side lies in front at rest, and the deck is dealt from here
+    stackFrom: 'left', // this side lies in front at rest
     speed: 0.7,        // seconds for one card to settle
     stagger: 0.09,     // seconds between cards
     bounce: 0.45,      // 0 lands softly, 1 overshoots and wobbles
@@ -2103,6 +2106,10 @@ class HeroFanController {
   #shifts = null;
   #partLeft = 0;
   #partRight = 0;
+  #wideQuery = null;
+  #config = HeroFanController.#OPTIONS;
+  #motif = null;
+  #motifToken = 0;
 
   constructor(transitionCoordinator) {
     this.#transitionCoordinator = transitionCoordinator;
@@ -2113,6 +2120,8 @@ class HeroFanController {
     if (!this.#count) return;
 
     const o = HeroFanController.#OPTIONS;
+    this.#wideQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 960px)') : null;
+    this.#motif = document.querySelector('.memory-motif .motif-text');
     this.#offsets = this.#cards.map(() => ({
       x: { x: 0, v: 0 }, y: { x: 0, v: 0 }, r: { x: 0, v: 0 }, tx: 0, ty: 0, tr: 0,
     }));
@@ -2348,16 +2357,33 @@ class HeroFanController {
 
   // ── Layout and painting ──
 
+  // The options for the current screen: the owner's values, with the wide-screen card size and
+  // deal side from 960px
+  #currentConfig() {
+    const o = HeroFanController.#OPTIONS;
+    const wide = Boolean(this.#wideQuery?.matches);
+    return {
+      ...o,
+      cardWidth: wide ? o.wideCardWidth : o.cardWidth,
+      dealFrom: wide ? 'right' : o.stackFrom,
+    };
+  }
+
   #measure() {
     const width = this.#stage.clientWidth || 0;
-    if (width === this.#measuredWidth) return false;
+    const config = this.#currentConfig();
+    if (width === this.#measuredWidth && config.cardWidth === this.#config.cardWidth
+      && config.dealFrom === this.#config.dealFrom) return false;
     this.#measuredWidth = width;
-    const o = HeroFanController.#OPTIONS;
-    this.#layout = HeroFanController.#fit(width, this.#count, o);
+    this.#config = config;
+    this.#layout = HeroFanController.#fit(width, this.#count, config);
     this.#shifts = HeroFanController.#sideShifts(this.#count, this.#layout.options);
     this.#retarget();
     this.#stage.style.height = `${this.#layout.stageHeight.toFixed(1)}px`;
-    const radius = `${(o.radius * this.#layout.fit).toFixed(2)}px`;
+    // The CSS aspect ratio only approximates the height until now
+    this.#stage.style.maxHeight = 'none';
+    this.#stage.style.aspectRatio = 'auto';
+    const radius = `${(config.radius * this.#layout.fit).toFixed(2)}px`;
     this.#cards.forEach(card => {
       card.style.width = `${this.#layout.width.toFixed(2)}px`;
       card.style.height = `${this.#layout.height.toFixed(2)}px`;
@@ -2389,8 +2415,10 @@ class HeroFanController {
     });
   }
 
+  // Dealing order: the card nearest the deck goes first. Dealt from the right, the back cards
+  // land first and the front card lands last, on top.
   #rank(i) {
-    return HeroFanController.#OPTIONS.stackFrom === 'right' ? this.#count - 1 - i : i;
+    return this.#config.dealFrom === 'right' ? this.#count - 1 - i : i;
   }
 
   #layer(i) {
@@ -2408,7 +2436,7 @@ class HeroFanController {
     let rotation = final.rotation;
     if (p !== 1) {
       const h = L.height;
-      const side = HeroFanController.#OPTIONS.stackFrom === 'right' ? 1 : -1;
+      const side = this.#config.dealFrom === 'right' ? 1 : -1;
       const startX = side * (L.originX + L.width * 1.2);
       const startY = L.stageHeight - L.originY + h * 0.4;
       const controlX = (startX + x) / 2;
@@ -2506,6 +2534,7 @@ class HeroFanController {
   }
 
   #play() {
+    if (this.#time !== null) return;
     if (this.#reduced) {
       this.#finish();
       return;
@@ -2558,6 +2587,8 @@ class HeroFanController {
     };
     if (typeof ResizeObserver === 'function') new ResizeObserver(remeasure).observe(this.#stage);
     else window.addEventListener('resize', remeasure, { passive: true });
+    // Crossing 960px changes the card size even when the stage keeps its width
+    this.#wideQuery?.addEventListener?.('change', remeasure);
   }
 
   // ── Hover and keyboard ──
@@ -2568,6 +2599,7 @@ class HeroFanController {
     if (next === this.#active) return;
     this.#active = next;
     this.#stage.classList.toggle('is-active', next >= 0);
+    this.#showName(next);
     this.#retarget();
     this.#fullRepaint = true;
     if (this.#reduced) {
@@ -2576,6 +2608,25 @@ class HeroFanController {
     } else {
       this.#wake();
     }
+  }
+
+  // The line under the fan names the lifted card, and goes back to the place name after
+  #showName(index) {
+    const motif = this.#motif;
+    if (!motif) return;
+    const text = index >= 0 ? this.#cards[index].dataset.name : motif.dataset.default;
+    if (!text) return;
+    const token = ++this.#motifToken;
+    if (this.#reduced) {
+      motif.textContent = text;
+      return;
+    }
+    motif.classList.add('is-swapping');
+    setTimeout(() => {
+      if (token !== this.#motifToken) return;
+      motif.textContent = text;
+      motif.classList.remove('is-swapping');
+    }, 150);
   }
 
   // Stable slots, one per card and centred on its resting place, so a card that moves never
@@ -2609,7 +2660,11 @@ class HeroFanController {
       if (e.target === stage && this.#active >= 0) this.#cards[this.#active].click();
     });
     this.#cards.forEach((card, i) => {
-      card.addEventListener('focus', () => this.#activate(i));
+      // Tabbing onto a card before the scroll trigger has dealt the fan deals it straight away
+      card.addEventListener('focus', () => {
+        this.#play();
+        this.#activate(i);
+      });
       card.addEventListener('keydown', e => {
         const n = this.#count;
         const next = e.key === 'ArrowRight' ? (i + 1) % n

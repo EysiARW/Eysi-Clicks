@@ -67,8 +67,8 @@
       .photo-item img { opacity: 1; }
       .about-img, .about-text .section-title, .about-role, .about-bio { opacity: 1; transform: none; }
       .about-img picture::after { display: none; }
-      .hero-deck { visibility: visible; display: flex; justify-content: center; align-items: center; height: auto; padding: var(--space-lg) var(--space-xl); }
-      .hero-card { position: relative; width: 112px; margin: 0 -14px; }
+      .hero-deck:not([data-ready]) { visibility: visible; display: flex; justify-content: center; align-items: center; height: auto; aspect-ratio: auto; max-height: none; padding: var(--space-lg) 0; }
+      .hero-card { position: relative; flex: 0 0 auto; width: min(124px, 23%); margin: 0 -1.5%; }
     </style>
   </noscript>
 
@@ -167,7 +167,7 @@
       <div class="hero-showcase">
         <!-- Hero fan: HeroFanController (app.js, section 8b) deals these cards in and lays them on a curve -->
         <div class="hero-deck" role="group" aria-label="Curated photography highlights">
-          <figure class="hero-monument hero-card hero-frame" data-cat="predebut" data-slug="eysi-2-22" role="button" tabindex="0" aria-label="View Avegail @18 (Pre-Debut) in Lightbox">
+          <figure class="hero-monument hero-card hero-frame" data-name="Avegail @18 · Pre-Debut" data-cat="predebut" data-slug="eysi-2-22" role="button" tabindex="0" aria-label="View Avegail @18 (Pre-Debut) in Lightbox">
             <div class="hero-monument-mat">
               <picture>
                 <source srcset="predebut/portrait/EYSI-2-22.grid.webp" type="image/webp">
@@ -175,7 +175,7 @@
               </picture>
             </div>
           </figure>
-          <figure class="hero-monument hero-card hero-frame" data-cat="events" data-slug="eysi-7-3" role="button" tabindex="0" aria-label="View Eddie @75 (Events) in Lightbox">
+          <figure class="hero-monument hero-card hero-frame" data-name="Eddie @75 · Events" data-cat="events" data-slug="eysi-7-3" role="button" tabindex="0" aria-label="View Eddie @75 (Events) in Lightbox">
             <div class="hero-monument-mat">
               <picture>
                 <source srcset="events/portrait/EYSI-7-3.grid.webp" type="image/webp">
@@ -183,7 +183,7 @@
               </picture>
             </div>
           </figure>
-          <figure class="hero-monument hero-card hero-frame" data-cat="predebut" data-slug="eysi-6-3" role="button" tabindex="0" aria-label="View Anne @20 (Pre-Debut) in Lightbox">
+          <figure class="hero-monument hero-card hero-frame" data-name="Anne @20 · Pre-Debut" data-cat="predebut" data-slug="eysi-6-3" role="button" tabindex="0" aria-label="View Anne @20 (Pre-Debut) in Lightbox">
             <div class="hero-monument-mat">
               <picture>
                 <source srcset="predebut/portrait/EYSI-6-3.grid.webp" type="image/webp">
@@ -191,7 +191,7 @@
               </picture>
             </div>
           </figure>
-          <figure class="hero-monument hero-card hero-frame" data-cat="institutional" data-slug="eysi-109" role="button" tabindex="0" aria-label="View Foundation Week (Institutional) in Lightbox">
+          <figure class="hero-monument hero-card hero-frame" data-name="Foundation Week · Institutional" data-cat="institutional" data-slug="eysi-109" role="button" tabindex="0" aria-label="View Foundation Week (Institutional) in Lightbox">
             <div class="hero-monument-mat">
               <picture>
                 <source srcset="institutional/EYSI-109.grid.webp" type="image/webp">
@@ -199,18 +199,18 @@
               </picture>
             </div>
           </figure>
-          <figure class="hero-monument hero-card hero-frame" data-cat="predebut" data-slug="eysi-5-5" role="button" tabindex="0" aria-label="View Trisha @20 (Pre-Debut) in Lightbox">
+          <figure class="hero-monument hero-card hero-frame" data-name="Khel Pangilinan · Events" data-cat="events" data-slug="eysi-12" role="button" tabindex="0" aria-label="View Khel Pangilinan (Events) in Lightbox">
             <div class="hero-monument-mat">
               <picture>
-                <source srcset="predebut/portrait/EYSI-5-5.grid.webp" type="image/webp">
-                <img src="predebut/portrait/EYSI-5-5.jpg" alt="Trisha @20 · Pre-Debut" decoding="async" draggable="false" width="800" height="1000">
+                <source srcset="events/landscape/EYSI-12.grid.webp" type="image/webp">
+                <img src="events/landscape/EYSI-12.jpg" alt="Khel Pangilinan · Events" decoding="async" draggable="false" width="1200" height="800">
               </picture>
             </div>
           </figure>
         </div>
 
         <div class="memory-motif" aria-hidden="true">
-          <span class="motif-text">Cabuyao, Laguna</span>
+          <span class="motif-text" data-default="Cabuyao, Laguna">Cabuyao, Laguna</span>
         </div>
       </div>
     </div>
