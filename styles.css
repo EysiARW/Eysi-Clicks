@@ -120,6 +120,9 @@ html[data-theme="light"] {
   --shadow-elevated:  0 30px 70px -15px rgba(0, 0, 0, 0.16), 0 4px 16px rgba(0, 0, 0, 0.06);
   --shadow-btn-primary: 0 10px 28px -8px rgba(0, 0, 0, 0.22);
   --shadow-btn-hover:   0 16px 36px -8px rgba(0, 0, 0, 0.32);
+  /* Rim light on the hero CTA: warm champagne on the dark button, bronze hairline under it */
+  --specular-line:    #f3e7d3;
+  --specular-base:    #826a4e;
   --header-height:    5rem;
   --shutter-ease:     cubic-bezier(0.22, 1, 0.36, 1);
   --motion-ease-cinematic: cubic-bezier(0.22, 1, 0.36, 1);
@@ -196,6 +199,9 @@ html[data-theme="dark"] {
   --shadow-elevated:  0 32px 74px -12px rgba(0, 0, 0, 0.75), 0 6px 20px rgba(0, 0, 0, 0.45);
   --shadow-btn-primary: 0 10px 28px -8px rgba(0, 0, 0, 0.65);
   --shadow-btn-hover:   0 16px 36px -8px rgba(0, 0, 0, 0.85);
+  /* On the cream button a light line would vanish, so the light is bronze */
+  --specular-line:    #826a4e;
+  --specular-base:    #c5ad8d;
 }
 
 .sr-only {
@@ -1018,6 +1024,29 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
   .btn-editorial-primary:hover svg {
     transform: translateX(4px);
   }
+}
+
+/* Hero CTA rim light (SpecularEdgeController, ported from React Bits' SpecularButton). The
+   WebGL canvas reaches 24px past the button so the glow is never cut; it sits under the
+   label and arrow. The extra 1px in the inset is the button's border. */
+.btn-specular {
+  position: relative;
+  isolation: isolate;
+}
+
+.btn-specular > :not(.specular-light) {
+  position: relative;
+  z-index: 2;
+}
+
+.specular-light {
+  position: absolute;
+  inset: -25px;
+  z-index: 1;
+  display: block;
+  width: calc(100% + 50px);
+  height: calc(100% + 50px);
+  pointer-events: none;
 }
 
 .btn-editorial-secondary,
