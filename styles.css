@@ -1676,56 +1676,6 @@ html[data-theme="dark"] .about-img-inner {
 }
 
 
-/* ── 6b. FEATURE PRINT (one photograph between About and the gallery) ──
-   Ported from React Bits' Scroll Expand. The frame is laid out at its final size: as wide
-   as the page but never taller than the screen, at the photo's own 3:2, so nothing is
-   cropped. ScrollMotionController scales it up from about 42% of the page width as the
-   section scrolls in (transform only, no pinning); without GSAP, or with reduced motion,
-   it simply sits at full size. */
-.feature-print {
-  padding: var(--space-xl) 0 var(--section-pad-y);
-}
-
-.feature-print-figure {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-sm);
-  margin: 0;
-}
-
-.feature-print-frame {
-  width: min(100%, 150vh);
-  width: min(100%, 150svh);
-  aspect-ratio: 3 / 2;
-  overflow: hidden;
-  border-radius: var(--radius-photo);
-  background: var(--surface-mat);
-  cursor: pointer;
-}
-
-.feature-print-frame picture,
-.feature-print-frame img {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.feature-print-frame img {
-  object-fit: contain;
-}
-
-.feature-print-caption {
-  padding-inline: var(--container-pad);
-  font-family: var(--font-garamond);
-  font-size: 0.94rem;
-  font-style: italic;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: var(--text-muted);
-}
-
-
 /* ── 7. GALLERY SECTION & ARCHIVE CONTROLS ── */
 
 #gallery {
@@ -3582,7 +3532,6 @@ footer .ft-sub {
 .cat-tab:focus-visible,
 .photo-item:focus-visible,
 .hero-frame:focus-visible,
-.feature-print-frame:focus-visible,
 .ft-link:focus-visible,
 .back-to-top:focus-visible {
   outline: 2px solid var(--text);

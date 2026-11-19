@@ -1684,8 +1684,7 @@ class GalleryPresenter {
   }
 
   #bindHeroFloatingFrames() {
-    // The feature print between About and the gallery opens the same way
-    document.querySelectorAll('.hero-frame, .feature-print-frame').forEach(frame => {
+    document.querySelectorAll('.hero-frame').forEach(frame => {
       this.#cursorLoupe?.attachInteractiveTarget(frame, 'VIEW PHOTO');
 
       const handler = () => {
@@ -2707,31 +2706,6 @@ class ScrollMotionController {
     // being read while it scrolls and must not fade.
     media.add('(prefers-reduced-motion: no-preference) and (min-width: 960px)', () => this.#heroExit());
     media.add('(prefers-reduced-motion: no-preference)', () => this.#closingReveal());
-    media.add('(prefers-reduced-motion: no-preference)', () => this.#featureExpand());
-  }
-
-  // The feature print grows from about 42% of the page width to its full size as its
-  // section scrolls in, finishing when it is centred on screen (ported from React Bits'
-  // Scroll Expand without the pin and without the zoom-in, which would crop the photo).
-  // The caption fades in over the last part.
-  #featureExpand() {
-    const section = document.querySelector('.feature-print');
-    const frame = section?.querySelector('.feature-print-frame');
-    if (!frame) return;
-    const caption = section.querySelector('.feature-print-caption');
-    const startScale = () => Math.min(1, Math.max(0.3, (0.42 * section.clientWidth) / (frame.offsetWidth || 1)));
-    // Measured on the figure, whose box the frame's scale does not change; the frame is its
-    // top part, so "centred" is half the frame's height below the figure's top
-    const timeline = this.#gsap.timeline({
-      defaults: { ease: 'none' },
-      scrollTrigger: {
-        trigger: section.querySelector('.feature-print-figure') || section,
-        start: 'top bottom', end: () => `top+=${Math.round(frame.offsetHeight / 2)} center`,
-        scrub: 0.1, invalidateOnRefresh: true,
-      },
-    });
-    timeline.fromTo(frame, { scale: startScale }, { scale: 1, duration: 1 });
-    if (caption) timeline.fromTo(caption, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.7);
   }
 
   #heroExit() {
