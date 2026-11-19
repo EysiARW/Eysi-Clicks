@@ -126,6 +126,9 @@ html[data-theme="light"] {
   --specular-ink-base:   #826a4e;
   --specular-paper-line: #826a4e;
   --specular-paper-base: #c5ad8d;
+  /* Spotlight on the Coverage cards: a white pool brightens the cream card, bronze edge */
+  --spotlight-fill:      rgba(255, 255, 255, 0.85);
+  --spotlight-edge:      rgba(130, 106, 78, 0.6);
   --header-height:    5rem;
   --shutter-ease:     cubic-bezier(0.22, 1, 0.36, 1);
   --motion-ease-cinematic: cubic-bezier(0.22, 1, 0.36, 1);
@@ -208,6 +211,8 @@ html[data-theme="dark"] {
   --specular-ink-base:   #c5ad8d;
   --specular-paper-line: #f3e7d3;
   --specular-paper-base: #826a4e;
+  --spotlight-fill:      rgba(243, 231, 211, 0.1);
+  --spotlight-edge:      rgba(197, 173, 141, 0.6);
 }
 
 .sr-only {
@@ -1671,6 +1676,56 @@ html[data-theme="dark"] .about-img-inner {
 }
 
 
+/* ── 6b. FEATURE PRINT (one photograph between About and the gallery) ──
+   Ported from React Bits' Scroll Expand. The frame is laid out at its final size: as wide
+   as the page but never taller than the screen, at the photo's own 3:2, so nothing is
+   cropped. ScrollMotionController scales it up from about 42% of the page width as the
+   section scrolls in (transform only, no pinning); without GSAP, or with reduced motion,
+   it simply sits at full size. */
+.feature-print {
+  padding: var(--space-xl) 0 var(--section-pad-y);
+}
+
+.feature-print-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.feature-print-frame {
+  width: min(100%, 150vh);
+  width: min(100%, 150svh);
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  border-radius: var(--radius-photo);
+  background: var(--surface-mat);
+  cursor: pointer;
+}
+
+.feature-print-frame picture,
+.feature-print-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.feature-print-frame img {
+  object-fit: contain;
+}
+
+.feature-print-caption {
+  padding-inline: var(--container-pad);
+  font-family: var(--font-garamond);
+  font-size: 0.94rem;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+}
+
+
 /* ── 7. GALLERY SECTION & ARCHIVE CONTROLS ── */
 
 #gallery {
@@ -2982,6 +3037,58 @@ html[data-theme="dark"] .photo-item img {
   animation-delay: 0.32s;
 }
 
+/* Spotlight (SpotlightCardController): a pool of light under the content and a brighter
+   one clipped to the card's 1px edge. JS moves the pools with transform and fades the
+   layers with opacity; both start hidden. */
+.package-card.has-spotlight {
+  position: relative;
+  isolation: isolate;
+}
+
+.package-card.has-spotlight > :not(.spotlight-light, .spotlight-edge) {
+  position: relative;
+  z-index: 2;
+}
+
+.spotlight-light,
+.spotlight-edge {
+  position: absolute;
+  overflow: hidden;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.spotlight-light {
+  inset: 0;
+  z-index: 0;
+}
+
+/* Sits on the 1px border; the mask keeps only that ring */
+.spotlight-edge {
+  inset: -1px;
+  z-index: 1;
+  padding: 1px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.spotlight-pool {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  background: radial-gradient(circle closest-side, var(--spotlight-fill), var(--spotlight-fill) 30%, transparent 100%);
+}
+
+.spotlight-edge .spotlight-pool {
+  background: radial-gradient(circle closest-side, var(--spotlight-edge), transparent 100%);
+}
+
 html[data-theme="dark"] .package-card {
   box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
 }
@@ -3475,6 +3582,7 @@ footer .ft-sub {
 .cat-tab:focus-visible,
 .photo-item:focus-visible,
 .hero-frame:focus-visible,
+.feature-print-frame:focus-visible,
 .ft-link:focus-visible,
 .back-to-top:focus-visible {
   outline: 2px solid var(--text);

@@ -1684,7 +1684,8 @@ class GalleryPresenter {
   }
 
   #bindHeroFloatingFrames() {
-    document.querySelectorAll('.hero-frame').forEach(frame => {
+    // The feature print between About and the gallery opens the same way
+    document.querySelectorAll('.hero-frame, .feature-print-frame').forEach(frame => {
       this.#cursorLoupe?.attachInteractiveTarget(frame, 'VIEW PHOTO');
 
       const handler = () => {
@@ -2706,6 +2707,31 @@ class ScrollMotionController {
     // being read while it scrolls and must not fade.
     media.add('(prefers-reduced-motion: no-preference) and (min-width: 960px)', () => this.#heroExit());
     media.add('(prefers-reduced-motion: no-preference)', () => this.#closingReveal());
+    media.add('(prefers-reduced-motion: no-preference)', () => this.#featureExpand());
+  }
+
+  // The feature print grows from about 42% of the page width to its full size as its
+  // section scrolls in, finishing when it is centred on screen (ported from React Bits'
+  // Scroll Expand without the pin and without the zoom-in, which would crop the photo).
+  // The caption fades in over the last part.
+  #featureExpand() {
+    const section = document.querySelector('.feature-print');
+    const frame = section?.querySelector('.feature-print-frame');
+    if (!frame) return;
+    const caption = section.querySelector('.feature-print-caption');
+    const startScale = () => Math.min(1, Math.max(0.3, (0.42 * section.clientWidth) / (frame.offsetWidth || 1)));
+    // Measured on the figure, whose box the frame's scale does not change; the frame is its
+    // top part, so "centred" is half the frame's height below the figure's top
+    const timeline = this.#gsap.timeline({
+      defaults: { ease: 'none' },
+      scrollTrigger: {
+        trigger: section.querySelector('.feature-print-figure') || section,
+        start: 'top bottom', end: () => `top+=${Math.round(frame.offsetHeight / 2)} center`,
+        scrub: 0.1, invalidateOnRefresh: true,
+      },
+    });
+    timeline.fromTo(frame, { scale: startScale }, { scale: 1, duration: 1 });
+    if (caption) timeline.fromTo(caption, { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.7);
   }
 
   #heroExit() {
@@ -3527,6 +3553,132 @@ class JellyTabsController {
   }
 }
 
+/* ── 8f. SPOTLIGHT CARDS (a soft light that follows the pointer across the Coverage cards) ── */
+
+// A vanilla port of React Bits' Spotlight Card (MIT + Commons Clause, notice in
+// vendor/reactbits/LICENSE.md). Each card gets a pool of light under its content and a
+// brighter one clipped to its 1px edge; both are plain layers moved with transform and
+// faded with opacity, so nothing repaints. The light reaches a card from 80px away, so
+// two cards side by side share it. Colours are --spotlight-fill / --spotlight-edge
+// (Daylight: a white pool and bronze edge on the cream card; Darkroom: champagne).
+// Not ported: the press flare (the cards are not buttons), the idle drift and the grain.
+class SpotlightCardController {
+  // The component's defaults (2026-11-19); intensity and edge strength live in the colours
+  static #OPTIONS = Object.freeze({
+    size: 240,        // radius of the light, px
+    proximity: 80,    // px outside a card at which the light starts to reach it
+    smoothing: 0.3,   // how far the light floats behind the pointer, s
+  });
+
+  #transitionCoordinator;
+  #cards = [];
+  #pointer = { x: 0, y: 0, known: false };
+  #raf = 0;
+  #last = 0;
+  #visible = false;
+
+  constructor(transitionCoordinator) {
+    this.#transitionCoordinator = transitionCoordinator;
+    const cards = Array.from(document.querySelectorAll('.package-card'));
+    if (!cards.length || typeof requestAnimationFrame !== 'function'
+      || typeof cards[0].prepend !== 'function') return;
+    this.#cards = cards.map(card => this.#dress(card));
+    this.#bind();
+  }
+
+  #dress(card) {
+    const layer = className => {
+      const outer = document.createElement('span');
+      outer.className = className;
+      outer.setAttribute('aria-hidden', 'true');
+      const pool = document.createElement('span');
+      pool.className = 'spotlight-pool';
+      outer.appendChild(pool);
+      card.prepend(outer);
+      return { outer, pool };
+    };
+    const edge = layer('spotlight-edge');
+    const light = layer('spotlight-light');
+    card.classList.add('has-spotlight');
+    return { card, light, edge, x: 0, y: 0, near: 0, placed: false };
+  }
+
+  #bind() {
+    const track = event => {
+      this.#pointer.x = event.clientX;
+      this.#pointer.y = event.clientY;
+      this.#pointer.known = true;
+      this.#wake();
+    };
+    const forget = event => {
+      if (event && event.pointerType === 'mouse') return;
+      this.#pointer.known = false;
+      this.#wake();
+    };
+    window.addEventListener('pointermove', track, { passive: true });
+    window.addEventListener('pointerdown', track, { passive: true });
+    window.addEventListener('pointerup', forget, { passive: true });
+    window.addEventListener('pointercancel', forget, { passive: true });
+    document.documentElement.addEventListener('pointerleave', () => forget());
+    // Only work while the cards are on screen
+    if (typeof IntersectionObserver === 'function') {
+      const seen = new Set();
+      new IntersectionObserver(entries => {
+        entries.forEach(entry => (entry.isIntersecting ? seen.add(entry.target) : seen.delete(entry.target)));
+        this.#visible = seen.size > 0;
+        this.#wake();
+      }).observe(this.#cards[0].card.parentElement || this.#cards[0].card);
+    } else {
+      this.#visible = true;
+    }
+  }
+
+  #wake() {
+    if (!this.#raf && this.#visible) this.#raf = requestAnimationFrame(t => this.#frame(t));
+  }
+
+  #frame(now) {
+    this.#raf = 0;
+    const o = SpotlightCardController.#OPTIONS;
+    const dt = this.#last ? Math.min(0.05, (now - this.#last) / 1000) : 1 / 60;
+    this.#last = now;
+    const follow = this.#transitionCoordinator?.prefersReducedMotion ? 1 : 1 - Math.exp(-dt * (4 / o.smoothing));
+    let moving = false;
+    this.#cards.forEach(entry => {
+      const rect = entry.card.getBoundingClientRect();
+      const x = this.#pointer.x - rect.left;
+      const y = this.#pointer.y - rect.top;
+      let near = 0;
+      if (this.#pointer.known) {
+        const dx = Math.max(-x, 0, x - rect.width);
+        const dy = Math.max(-y, 0, y - rect.height);
+        const t = Math.min(1, Math.max(0, 1 - Math.hypot(dx, dy) / o.proximity));
+        near = t * t * (3 - 2 * t);
+      }
+      // A light that is off jumps to the pointer, so it fades in where the pointer is
+      if (!entry.placed || entry.near < 0.01) {
+        entry.x = x;
+        entry.y = y;
+        entry.placed = true;
+      } else {
+        entry.x += (x - entry.x) * follow;
+        entry.y += (y - entry.y) * follow;
+      }
+      entry.near += (near - entry.near) * follow;
+      if (Math.abs(near - entry.near) > 0.002 || Math.hypot(x - entry.x, y - entry.y) > 0.3) moving = true;
+      else entry.near = near;
+      const shift = `translate3d(${(entry.x - o.size).toFixed(1)}px, ${(entry.y - o.size).toFixed(1)}px, 0)`;
+      entry.light.pool.style.transform = shift;
+      entry.edge.pool.style.transform = shift;
+      const opacity = entry.near.toFixed(3);
+      entry.light.outer.style.opacity = opacity;
+      entry.edge.outer.style.opacity = opacity;
+    });
+    if (moving) this.#raf = requestAnimationFrame(t => this.#frame(t));
+    else this.#last = 0;
+  }
+}
+
 /* ── 9. APPLICATION BOOTSTRAP ── */
 
 const repository            = new PortfolioRepository(photoData, CATS);
@@ -3541,6 +3693,7 @@ const heroFan               = new HeroFanController(transitionCoordinator);
 const scrollMotion          = new ScrollMotionController();
 const specularEdge          = new SpecularEdgeController(transitionCoordinator);
 const jellyTabs             = new JellyTabsController(transitionCoordinator);
+const spotlightCards        = new SpotlightCardController(transitionCoordinator);
 
 // Keep the footer copyright year current without a yearly edit
 const footerYearEl = document.getElementById('ft-year');
