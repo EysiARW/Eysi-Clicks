@@ -90,30 +90,6 @@ const photoData = {
 };
 
 
-/* Hero wheel rotation: the photos that turn through the three hero cards, in order.
-   The first three are the cards in index.html (left, centre, right); the rest enter from
-   the left one at a time. Any photo listed in photoData above can be added here. */
-const HERO_ROTATION = [
-  "predebut/portrait/EYSI-2-22.jpg",
-  "events/portrait/EYSI-7-3.jpg",
-  "institutional/EYSI-109.jpg",
-  "predebut/portrait/EYSI-5-5.jpg",
-  "events/landscape/EYSI-77.jpg",
-  "institutional/EYSI-57.jpg",
-  "predebut/portrait/EYSI-6-3.jpg",
-  "events/landscape/EYSI-1-62.jpg",
-  "institutional/EYSI-26.jpg",
-  "predebut/landscape/EYSI-1-62.jpg",
-  "events/landscape/EYSI-53.jpg",
-  "institutional/EYSI-32.jpg",
-];
-
-/* Shorter names for hero cards whose story title is too long for the small caption */
-const HERO_SHORT_TITLES = {
-  "UC - PNC Foundation Week 2026": "Foundation Week",
-};
-
-
 /* ── 1. DOMAIN MODEL & REPOSITORY ── */
 
 class PhotoAsset {
@@ -2069,303 +2045,642 @@ class EditorialMotionController {
   }
 
   #initEntranceCleanup() {
-    let settled = false;
-    const settle = () => {
-      if (settled) return;
-      settled = true;
-      document.documentElement.classList.add('hero-settled');
-    };
-
+    const settle = () => document.documentElement.classList.add('hero-settled');
     if (this.#transitionCoordinator?.prefersReducedMotion) {
       settle();
       return;
     }
-
-    const cards = document.querySelectorAll('.hero-card');
-    let endedCount = 0;
-    const supportsAnimationProp = typeof AnimationEvent !== 'undefined' && 'animation' in AnimationEvent.prototype;
-
-    cards.forEach(card => {
-      card.addEventListener('animationend', (e) => {
-        const animTarget = supportsAnimationProp && e.animation?.effect?.target ? e.animation.effect.target : e.target;
-        if (animTarget === card || e.target === card) {
-          card.style.willChange = 'auto';
-          endedCount++;
-          if (endedCount >= cards.length) {
-            settle();
-          }
-        }
-      });
-    });
-
-    // Fallback timer: ensure hero is marked settled even if animations are suppressed or run in background tab
+    // Every hero entrance keyframe has finished by then (the fan cards are placed by
+    // HeroFanController and have none)
     setTimeout(settle, 1650);
   }
 }
 
 
-/* ── 8b. HERO WHEEL (cards turn along the fan's own arc) ── */
+/* ── 8b. HERO FAN (cards dealt onto a curve; hover lifts one and parts the fan) ── */
 
-class HeroCarouselController {
-  // The resting fan (left / centre / right) is three spokes of one large wheel: the side
-  // cards sit one "step" (their rest rotation) either side of centre. The wheel turns that
-  // arc left to right at one constant speed. Two steps out on each side is a portal: the
-  // right card sinks back and fades into it, gets the next photo while hidden, and emerges
-  // from the left portal. Paused it is exactly the original fan.
-  static #STEP_SECONDS = 5;
-  // In steps from centre: a card is whole up to FULL and fully inside a portal at PORTAL.
-  // PORTAL must be 2 with four cards, so the one leaving on the right and the one arriving
-  // on the left are the same card at the same moment.
-  static #FULL = 1;
-  static #PORTAL = 2;
+// A vanilla port of ReactDrops' "Fan Gallery" (drop 29, v2.0.1): its fan geometry, hover
+// clearance, spring maths and "deal" entrance. ReactDrops Component License 1.0 (royalty-free
+// for finished websites); the full text is in vendor/reactdrops/LICENSE.txt.
+class HeroFanController {
+  // The owner's configuration (2026-11-19). Distances are in layout pixels before fitting.
+  // From 960px the hero has two columns: cards are larger there, and the deck is dealt from
+  // the right so the cards never cross the headline (see #currentConfig).
+  static #OPTIONS = Object.freeze({
+    cardWidth: 162,
+    wideCardWidth: 200,
+    aspectRatio: 0.8,
+    spacing: 0.69,     // distance between card centres, as a fraction of the card width
+    curve: 0.2,        // how far the outer cards drop, as a fraction of the card height
+    tilt: 14.5,        // degrees the outer cards lean outward
+    lift: 42,          // pixels the hovered card rises
+    spread: 0.2,       // extra gap opened beside the hovered card, in card widths
+    stackFrom: 'left', // this side lies in front at rest
+    speed: 0.7,        // seconds for one card to settle
+    stagger: 0.09,     // seconds between cards
+    bounce: 0.45,      // 0 lands softly, 1 overshoots and wobbles
+    hoverSpeed: 0.28,  // seconds for a card to glide to its hover position
+    radius: 18,
+    viewportStart: 75, // play once the stage's top passes 75% down the viewport
+  });
+  static #PADDING = 16;
+  static #RAD = Math.PI / 180;
 
-  #repository;
   #transitionCoordinator;
-  #deck;
-  #lightboxEl;
-  #pool = [];
-  #nextPoolIdx = 0;
+  #stage;
   #cards = [];
-  #phase = 0;
-  #speed = 1;
-  #stepDeg = 8;
-  #radius = 935;
-  #lastTime = 0;
-  #rafId = null;
-  #inView = true;
-  #hovered = false;
-  #focused = false;
-  #needsMeasure = true;
-  #portals = [];
+  #count = 0;
+  #layout = null;
+  #measuredWidth = -1;
+  // Entrance clock in seconds: null before play, Infinity once finished
+  #time = null;
+  #started = null;
+  #length = 0;
+  #last = 0;
+  #frame = 0;
+  #animating = false;
+  #active = -1;
+  #offsets = [];
+  #written = [];
+  #fullRepaint = true;
+  #shifts = null;
+  #partLeft = 0;
+  #partRight = 0;
+  #wideQuery = null;
+  #config = HeroFanController.#OPTIONS;
+  #motif = null;
+  #motifToken = 0;
 
-  constructor(repository, transitionCoordinator) {
-    this.#repository = repository;
+  constructor(transitionCoordinator) {
     this.#transitionCoordinator = transitionCoordinator;
-    this.#deck = document.querySelector('.hero-deck');
-    this.#lightboxEl = document.getElementById('lightbox');
-    if (!this.#deck || transitionCoordinator?.prefersReducedMotion
-      || typeof requestAnimationFrame !== 'function') return;
+    this.#stage = document.querySelector('.hero-deck');
+    if (!this.#stage || typeof requestAnimationFrame !== 'function') return;
+    this.#cards = Array.from(this.#stage.querySelectorAll('.hero-card'));
+    this.#count = this.#cards.length;
+    if (!this.#count) return;
 
-    this.#pool = this.#buildPool();
-    const [left, center, right, extra] = ['.hero-card-left', '.hero-card-center', '.hero-card-right', '.hero-card-extra']
-      .map(sel => this.#deck.querySelector(sel));
-    if (!left || !center || !right || !extra || this.#pool.length < 4) return;
+    const o = HeroFanController.#OPTIONS;
+    this.#wideQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 960px)') : null;
+    this.#motif = document.querySelector('.memory-motif .motif-text');
+    this.#offsets = this.#cards.map(() => ({
+      x: { x: 0, v: 0 }, y: { x: 0, v: 0 }, r: { x: 0, v: 0 }, tx: 0, ty: 0, tr: 0,
+    }));
+    this.#written = this.#cards.map(() => ({ transform: '', z: -1 }));
+    this.#length = (this.#count - 1) * o.stagger + HeroFanController.#settleTime(o.speed, o.bounce);
 
-    this.#cards = [
-      { el: extra,  slot: -2, interactive: false },
-      { el: left,   slot: -1, interactive: true },
-      { el: center, slot: 0,  interactive: true },
-      { el: right,  slot: 1,  interactive: true },
-    ];
-    this.#nextPoolIdx = 4 % this.#pool.length;
-    this.#preload(this.#pool[this.#nextPoolIdx]);
-    this.#whenEntranceSettled(() => this.#start());
+    this.#measure();
+    this.#stage.dataset.ready = 'true';
+    this.#bindInput();
+    this.#watchSize();
+    if (this.#reduced) this.#finish();
+    else this.#armTrigger();
   }
 
-  #buildPool() {
-    const bySrc = new Map();
-    this.#repository.getCategories().forEach(cat => {
-      this.#repository.getPhotos(cat).forEach(asset => bySrc.set(asset.src, asset));
+  get #reduced() {
+    return Boolean(this.#transitionCoordinator?.prefersReducedMotion);
+  }
+
+  // ── Geometry (ported) ──
+
+  // Resting pose of card `index`, relative to the middle of the fan (y grows downward)
+  static #restPose(index, count, o) {
+    const width = o.cardWidth;
+    const height = width / o.aspectRatio;
+    const middle = (count - 1) / 2;
+    const offset = index - middle;
+    const share = offset / Math.max(1, middle);
+    return {
+      x: offset * Math.max(0, o.spacing) * width,
+      y: Math.max(0, o.curve) * height * share * share,
+      rotation: o.tilt * share,
+    };
+  }
+
+  static #corners(pose, width, height) {
+    const cos = Math.cos(pose.rotation * HeroFanController.#RAD);
+    const sin = Math.sin(pose.rotation * HeroFanController.#RAD);
+    const xs = [];
+    const ys = [];
+    [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy]) => {
+      const dx = (sx * width) / 2;
+      const dy = (sy * height) / 2;
+      xs.push(pose.x + dx * cos - dy * sin);
+      ys.push(pose.y + dx * sin + dy * cos);
     });
-    return HERO_ROTATION.map(src => bySrc.get(src)).filter(Boolean);
+    return { xs, ys };
   }
 
-  #whenEntranceSettled(callback) {
-    const root = document.documentElement;
-    if (root.classList.contains('hero-settled')) { callback(); return; }
-    let done = false;
-    const go = () => { if (!done) { done = true; callback(); } };
-    if (typeof MutationObserver === 'function') {
-      const watcher = new MutationObserver(() => {
-        if (root.classList.contains('hero-settled')) { watcher.disconnect(); go(); }
-      });
-      watcher.observe(root, { attributes: true, attributeFilter: ['class'] });
+  // Rightmost (side 1) or leftmost (side -1) point of a quad on the line y
+  static #edgeAt(q, y, side) {
+    let best = side > 0 ? -Infinity : Infinity;
+    for (let k = 0; k < 4; k++) {
+      const j = (k + 1) & 3;
+      const ay = q.ys[k];
+      const by = q.ys[j];
+      if ((ay - y) * (by - y) > 0 || ay === by) continue;
+      const x = q.xs[k] + ((y - ay) / (by - ay)) * (q.xs[j] - q.xs[k]);
+      best = side > 0 ? Math.max(best, x) : Math.min(best, x);
     }
-    setTimeout(go, 2200);
+    return best;
   }
 
-  #start() {
-    this.#deck.classList.add('is-turning');
-    // Portals are decoration that only exists while the wheel turns
-    this.#portals = [-1, 1].map(side => {
-      const el = document.createElement('span');
-      el.className = 'hero-portal';
-      el.setAttribute('aria-hidden', 'true');
-      this.#deck.appendChild(el);
-      return { el, side };
+  // How far the right card reaches into the left one, over every height both share. Both
+  // edges are piecewise linear in y, so checking the vertex heights is exact.
+  static #overlapWidth(left, right, width, height) {
+    const a = HeroFanController.#corners(left, width, height);
+    const b = HeroFanController.#corners(right, width, height);
+    const top = Math.max(Math.min(...a.ys), Math.min(...b.ys));
+    const bottom = Math.min(Math.max(...a.ys), Math.max(...b.ys));
+    if (top >= bottom) return -Infinity;
+    let overlap = -Infinity;
+    const check = y => {
+      if (y < top || y > bottom) return;
+      const l = HeroFanController.#edgeAt(a, y, 1);
+      const r = HeroFanController.#edgeAt(b, y, -1);
+      if (Number.isFinite(l) && Number.isFinite(r)) overlap = Math.max(overlap, l - r);
+    };
+    check(top);
+    check(bottom);
+    for (let k = 0; k < 4; k++) {
+      check(a.ys[k]);
+      check(b.ys[k]);
+    }
+    return overlap;
+  }
+
+  // For every card that can be lifted: how far each side of the fan slides, as one piece, so
+  // the lifted card overlaps nothing, plus the spread gap
+  static #sideShifts(count, o) {
+    const width = o.cardWidth;
+    const height = width / o.aspectRatio;
+    const gap = Math.max(0, o.spread) * width;
+    const left = [];
+    const right = [];
+    for (let active = 0; active < count; active++) {
+      const lifted = { ...HeroFanController.#restPose(active, count, o), rotation: 0 };
+      lifted.y -= o.lift;
+      let l = 0;
+      let r = 0;
+      for (let i = 0; i < count; i++) {
+        if (i === active) continue;
+        const pose = HeroFanController.#restPose(i, count, o);
+        if (i > active) r = Math.max(r, HeroFanController.#overlapWidth(lifted, pose, width, height));
+        else l = Math.max(l, HeroFanController.#overlapWidth(pose, lifted, width, height));
+      }
+      left.push(l + gap);
+      right.push(r + gap);
+    }
+    return { left, right };
+  }
+
+  #pose(index, active = -1) {
+    const o = this.#layout.options;
+    const pose = HeroFanController.#restPose(index, this.#count, o);
+    if (active < 0 || active >= this.#count) return pose;
+    if (index === active) return { x: pose.x, y: pose.y - o.lift, rotation: 0 };
+    pose.x += index > active ? this.#partRight : -this.#partLeft;
+    return pose;
+  }
+
+  // The original lets a parted fan run past its own edges. In the hero that would cover the
+  // headline beside it (two columns) or run off the screen, so each side parts only as far as
+  // the room it has; when cramped, the neighbours tuck partly behind the lifted card.
+  #limitParting(active) {
+    this.#partLeft = 0;
+    this.#partRight = 0;
+    if (active < 0) return;
+    const L = this.#layout;
+    const o = L.options;
+    const n = this.#count;
+    const height = o.cardWidth / o.aspectRatio;
+    const box = this.#stage.getBoundingClientRect();
+    const viewport = document.documentElement.clientWidth || window.innerWidth;
+    let left = 8 - box.left;
+    const right = viewport - 8 - box.left;
+    const text = document.querySelector('.hero-content')?.getBoundingClientRect();
+    if (text && text.right <= box.left + 1 && text.bottom > box.top && text.top < box.bottom) {
+      left = Math.max(left, text.right + 16 - box.left);
+    }
+    const edge = (i, side) => {
+      const pose = HeroFanController.#restPose(i, n, o);
+      const reach = HeroFanController.#extents(pose.rotation, o.cardWidth, height).x;
+      return L.originX + (pose.x + side * reach) * L.fit;
+    };
+    this.#partLeft = Math.max(0, Math.min(this.#shifts.left[active], (edge(0, -1) - left) / L.fit));
+    this.#partRight = Math.max(0, Math.min(this.#shifts.right[active], (right - edge(n - 1, 1)) / L.fit));
+  }
+
+  static #extents(rotation, width, height) {
+    const c = Math.abs(Math.cos(rotation * HeroFanController.#RAD));
+    const s = Math.abs(Math.sin(rotation * HeroFanController.#RAD));
+    return { x: (c * width + s * height) / 2, y: (s * width + c * height) / 2 };
+  }
+
+  // Fits the resting fan to the stage width: spacing compresses first (down to 40%), then the
+  // cards scale down. Height reserves the hovered card's rise.
+  static #fit(availableWidth, count, input) {
+    const width = Math.max(40, input.cardWidth);
+    const height = width / input.aspectRatio;
+    const padding = HeroFanController.#PADDING;
+    const available = Math.max(1, availableWidth - padding * 2);
+    const middle = (count - 1) / 2;
+    const requested = Math.max(0, input.spacing);
+    let spacing = requested;
+    for (let i = 0; i < count; i++) {
+      const offset = Math.abs(i - middle);
+      if (!offset) continue;
+      const edge = HeroFanController.#extents(input.tilt * ((i - middle) / Math.max(1, middle)), width, height).x;
+      spacing = Math.min(spacing, (available / 2 - edge) / (offset * width));
+    }
+    spacing = Math.min(requested, Math.max(requested * 0.4, spacing));
+    const options = { ...input, cardWidth: width, spacing };
+    let half = 1;
+    let top = 0;
+    let restTop = Infinity;
+    let bottom = 0;
+    for (let i = 0; i < count; i++) {
+      const pose = HeroFanController.#restPose(i, count, options);
+      const e = HeroFanController.#extents(pose.rotation, width, height);
+      half = Math.max(half, Math.abs(pose.x) + e.x);
+      restTop = Math.min(restTop, pose.y - e.y);
+      top = Math.min(top, pose.y - e.y, pose.y - options.lift - height / 2);
+      bottom = Math.max(bottom, pose.y + e.y);
+    }
+    const fit = Math.min(1, available / (half * 2));
+    return {
+      fit,
+      width: width * fit,
+      height: height * fit,
+      originX: availableWidth / 2,
+      originY: -top * fit + padding,
+      stageHeight: (bottom - top) * fit + padding * 2,
+      bandTop: padding + (restTop - top) * fit,
+      bandBottom: padding + (bottom - top) * fit,
+      options,
+    };
+  }
+
+  // ── Springs (ported) ──
+
+  // Exact step response of a damped spring from 0 to 1; bounce lowers the damping ratio
+  static #spring(time, speed, bounce) {
+    if (time <= 0) return 0;
+    const zeta = 1 - 0.68 * Math.max(0, Math.min(1, bounce));
+    const omega = 6.6 / Math.max(0.05, speed);
+    if (zeta >= 0.999) return 1 - (1 + omega * time) * Math.exp(-omega * time);
+    const damped = omega * Math.sqrt(1 - zeta * zeta);
+    return 1 - Math.exp(-zeta * omega * time)
+      * (Math.cos(damped * time) + ((zeta * omega) / damped) * Math.sin(damped * time));
+  }
+
+  // Time after which that spring stays within 0.1% of its target
+  static #settleTime(speed, bounce) {
+    const zeta = 1 - 0.68 * Math.max(0, Math.min(1, bounce));
+    const omega = 6.6 / Math.max(0.05, speed);
+    const tolerance = 1e-3;
+    if (zeta >= 0.999) {
+      let t = Math.log(1 / tolerance) / omega;
+      for (let i = 0; i < 8; i++) t = (Math.log(1 + omega * t) + Math.log(1 / tolerance)) / omega;
+      return t;
+    }
+    return Math.log(1 / (tolerance * Math.sqrt(1 - zeta * zeta))) / (zeta * omega);
+  }
+
+  // Critically damped follow, frame-rate independent (each card has its own hover spring)
+  static #follow(state, target, omega, dt) {
+    const decay = Math.exp(-omega * dt);
+    const change = state.x - target;
+    const lag = (state.v + omega * change) * dt;
+    state.x = target + (change + lag) * decay;
+    state.v = (state.v - omega * lag) * decay;
+  }
+
+  // ── Layout and painting ──
+
+  // The options for the current screen: the owner's values, with the wide-screen card size and
+  // deal side from 960px
+  #currentConfig() {
+    const o = HeroFanController.#OPTIONS;
+    const wide = Boolean(this.#wideQuery?.matches);
+    return {
+      ...o,
+      cardWidth: wide ? o.wideCardWidth : o.cardWidth,
+      dealFrom: wide ? 'right' : o.stackFrom,
+    };
+  }
+
+  #measure() {
+    const width = this.#stage.clientWidth || 0;
+    const config = this.#currentConfig();
+    if (width === this.#measuredWidth && config.cardWidth === this.#config.cardWidth
+      && config.dealFrom === this.#config.dealFrom) return false;
+    this.#measuredWidth = width;
+    this.#config = config;
+    this.#layout = HeroFanController.#fit(width, this.#count, config);
+    this.#shifts = HeroFanController.#sideShifts(this.#count, this.#layout.options);
+    this.#retarget();
+    this.#stage.style.height = `${this.#layout.stageHeight.toFixed(1)}px`;
+    // The CSS aspect ratio only approximates the height until now
+    this.#stage.style.maxHeight = 'none';
+    this.#stage.style.aspectRatio = 'auto';
+    const radius = `${(config.radius * this.#layout.fit).toFixed(2)}px`;
+    this.#cards.forEach(card => {
+      card.style.width = `${this.#layout.width.toFixed(2)}px`;
+      card.style.height = `${this.#layout.height.toFixed(2)}px`;
+      card.style.borderRadius = radius;
     });
-    this.#deck.addEventListener('pointerenter', () => { this.#hovered = true; });
-    this.#deck.addEventListener('pointerleave', () => { this.#hovered = false; this.#wake(); });
-    // Tabbing onto a card pauses the wheel so keyboard users can read and open it. Focus the
-    // lightbox hands back on close (after a click or Esc) does not, or the wheel would stay
-    // stopped after every visit.
-    let tabbed = false;
-    document.addEventListener('keydown', e => { tabbed = e.key === 'Tab'; });
-    document.addEventListener('pointerdown', () => { tabbed = false; }, { passive: true });
-    this.#deck.addEventListener('focusin', () => { this.#focused = tabbed; });
-    this.#deck.addEventListener('focusout', () => { this.#focused = false; this.#wake(); });
-    window.addEventListener('resize', () => { this.#needsMeasure = true; }, { passive: true });
-    document.addEventListener('visibilitychange', () => this.#wake());
+    this.#snap();
+    this.#render();
+    return true;
+  }
 
-    if (typeof IntersectionObserver === 'function') {
-      new IntersectionObserver(entries => {
-        this.#inView = entries.some(e => e.isIntersecting);
-        this.#wake();
-      }).observe(this.#deck);
+  #retarget() {
+    this.#limitParting(this.#active);
+    const fit = this.#layout.fit;
+    this.#offsets.forEach((o, i) => {
+      const rest = this.#pose(i);
+      const target = this.#pose(i, this.#active);
+      o.tx = (target.x - rest.x) * fit;
+      o.ty = (target.y - rest.y) * fit;
+      o.tr = target.rotation - rest.rotation;
+    });
+  }
+
+  #snap() {
+    this.#offsets.forEach(o => {
+      o.x.x = o.tx;
+      o.y.x = o.ty;
+      o.r.x = o.tr;
+      o.x.v = o.y.v = o.r.v = 0;
+    });
+  }
+
+  // Dealing order: the card nearest the deck goes first. Dealt from the right, the back cards
+  // land first and the front card lands last, on top.
+  #rank(i) {
+    return this.#config.dealFrom === 'right' ? this.#count - 1 - i : i;
+  }
+
+  #layer(i) {
+    return HeroFanController.#OPTIONS.stackFrom === 'right' ? i : this.#count - 1 - i;
+  }
+
+  // Pose of card i at entrance progress p: thrown from a deck beside the stage along an arc,
+  // with a spin. Hover offsets ride on top, so hover responds even while cards arrive.
+  #place(i, p) {
+    const L = this.#layout;
+    const fit = L.fit;
+    const final = this.#pose(i);
+    let x = final.x * fit;
+    let y = final.y * fit;
+    let rotation = final.rotation;
+    if (p !== 1) {
+      const h = L.height;
+      const side = this.#config.dealFrom === 'right' ? 1 : -1;
+      const startX = side * (L.originX + L.width * 1.2);
+      const startY = L.stageHeight - L.originY + h * 0.4;
+      const controlX = (startX + x) / 2;
+      const controlY = Math.min(startY, y) - h * 0.9;
+      const q = 1 - p;
+      x = q * q * startX + 2 * q * p * controlX + p * p * x;
+      y = q * q * startY + 2 * q * p * controlY + p * p * y;
+      rotation = side * -75 + (rotation - side * -75) * p;
     }
+    const off = this.#offsets[i];
+    return { x: x + off.x.x, y: y + off.y.x, rotation: rotation + off.r.x };
+  }
+
+  #render(only) {
+    const o = HeroFanController.#OPTIONS;
+    const L = this.#layout;
+    const now = this.#time;
+    for (let i = 0; i < this.#count; i++) {
+      if (only && !only[i]) continue;
+      const progress = now === null ? 0
+        : now === Infinity ? 1
+        : HeroFanController.#spring(now - this.#rank(i) * o.stagger, o.speed, o.bounce);
+      const pose = this.#place(i, progress);
+      const left = L.originX + pose.x - L.width / 2;
+      const top = L.originY + pose.y - L.height / 2;
+      const transform = `translate(${left.toFixed(2)}px,${top.toFixed(2)}px) rotate(${pose.rotation.toFixed(3)}deg)`;
+      // The lifted card comes to the front; the rest keep their resting order
+      const z = 1 + this.#layer(i) + (i === this.#active ? this.#count : 0);
+      const cache = this.#written[i];
+      const style = this.#cards[i].style;
+      if (cache.transform !== transform) style.transform = cache.transform = transform;
+      if (cache.z !== z) style.zIndex = String(cache.z = z);
+    }
+  }
+
+  // ── Frame loop ──
+
+  static #settled(state, target) {
+    return Math.abs(state.x - target) < 0.02 && Math.abs(state.v) < 0.05;
+  }
+
+  static #cardMoving(o) {
+    const settled = HeroFanController.#settled;
+    return !settled(o.x, o.tx) || !settled(o.y, o.ty) || !settled(o.r, o.tr);
+  }
+
+  #entering() {
+    return this.#time !== null && this.#time !== Infinity;
+  }
+
+  #tick(now) {
+    this.#frame = 0;
+    const dt = this.#last ? Math.min(0.05, (now - this.#last) / 1000) : 1 / 60;
+    this.#last = now;
+    const omega = 6.6 / Math.max(0.05, HeroFanController.#OPTIONS.hoverSpeed);
+    const changed = new Uint8Array(this.#count);
+    this.#offsets.forEach((o, i) => {
+      if (!HeroFanController.#cardMoving(o)) return;
+      HeroFanController.#follow(o.x, o.tx, omega, dt);
+      HeroFanController.#follow(o.y, o.ty, omega, dt);
+      HeroFanController.#follow(o.r, o.tr, omega, dt);
+      if (!HeroFanController.#cardMoving(o)) {
+        o.x.x = o.tx;
+        o.y.x = o.ty;
+        o.r.x = o.tr;
+        o.x.v = o.y.v = o.r.v = 0;
+      }
+      changed[i] = 1;
+    });
+    if (this.#entering()) {
+      if (this.#started === null) this.#started = now;
+      this.#time = (now - this.#started) / 1000;
+      if (this.#time >= this.#length) this.#time = Infinity;
+      this.#fullRepaint = true;
+    }
+    this.#render(this.#fullRepaint ? undefined : changed);
+    this.#fullRepaint = false;
+    const moving = this.#entering() || this.#offsets.some(HeroFanController.#cardMoving);
+    this.#setAnimating(moving);
+    if (moving) this.#frame = requestAnimationFrame(t => this.#tick(t));
+    else this.#last = 0;
+  }
+
+  // While anything moves, cards may travel past the stage edges and are never cut
+  #setAnimating(on) {
+    if (on === this.#animating) return;
+    this.#animating = on;
+    this.#stage.classList.toggle('is-moving', on);
+    this.#stage.classList.toggle('is-animating', on);
+  }
+
+  #wake() {
+    this.#setAnimating(true);
+    if (!this.#frame) this.#frame = requestAnimationFrame(t => this.#tick(t));
+  }
+
+  #play() {
+    if (this.#time !== null) return;
+    if (this.#reduced) {
+      this.#finish();
+      return;
+    }
+    this.#time = 0;
+    this.#started = null;
+    this.#last = 0;
     this.#render();
     this.#wake();
   }
 
-  // Runs the frame loop only while the deck is on screen and the tab is visible
-  #wake() {
-    if (this.#rafId !== null || !this.#inView || document.hidden) return;
-    this.#lastTime = performance.now();
-    this.#rafId = requestAnimationFrame(t => this.#tick(t));
+  #finish() {
+    cancelAnimationFrame(this.#frame);
+    this.#frame = 0;
+    this.#last = 0;
+    this.#time = Infinity;
+    this.#setAnimating(false);
+    this.#snap();
+    this.#render();
   }
 
-  #tick(now) {
-    this.#rafId = null;
-    if (!this.#inView || document.hidden) return;
-    const dt = Math.min(0.1, (now - this.#lastTime) / 1000);
-    this.#lastTime = now;
+  // Deals the cards once the stage's top is 75% down the viewport, after the headline and
+  // tagline have begun (the old deck's slot in the entrance choreography)
+  #armTrigger() {
+    const delay = typeof getComputedStyle === 'function'
+      ? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--motion-delay-deck')) || 380
+      : 380;
+    setTimeout(() => {
+      if (typeof IntersectionObserver !== 'function') {
+        this.#play();
+        return;
+      }
+      const observer = new IntersectionObserver(entries => {
+        if (!entries.some(e => e.isIntersecting)) return;
+        observer.disconnect();
+        this.#play();
+      }, { rootMargin: `0px 0px -${100 - HeroFanController.#OPTIONS.viewportStart}% 0px` });
+      observer.observe(this.#stage);
+    }, delay);
+  }
 
-    // Under the pointer, on keyboard focus, or behind the lightbox the wheel stops — but first
-    // glides to the nearest resting fan, so a pause never freezes a card half-faded. The
-    // target keeps any focused card on the visible side.
-    const paused = this.#hovered || this.#focused || this.#lightboxEl?.classList.contains('open');
-    if (paused) {
-      this.#speed = 0;
-      let rest = this.#phase < 0.5 ? 0 : 1;
-      const held = this.#cards.find(c => c.el === document.activeElement);
-      if (held && Math.abs(held.slot + rest) > 1) rest = 1 - rest;
-      this.#phase += (rest - this.#phase) * Math.min(1, dt * 5);
-      if (Math.abs(rest - this.#phase) < 0.0015) this.#phase = rest;
+  #watchSize() {
+    let pending = 0;
+    const remeasure = () => {
+      if (pending) return;
+      pending = requestAnimationFrame(() => {
+        pending = 0;
+        this.#measure();
+      });
+    };
+    if (typeof ResizeObserver === 'function') new ResizeObserver(remeasure).observe(this.#stage);
+    else window.addEventListener('resize', remeasure, { passive: true });
+    // Crossing 960px changes the card size even when the stage keeps its width
+    this.#wideQuery?.addEventListener?.('change', remeasure);
+  }
+
+  // ── Hover and keyboard ──
+
+  #activate(index) {
+    if (this.#time === null) return;
+    const next = index < 0 ? -1 : index;
+    if (next === this.#active) return;
+    this.#active = next;
+    this.#stage.classList.toggle('is-active', next >= 0);
+    this.#showName(next);
+    this.#retarget();
+    this.#fullRepaint = true;
+    if (this.#reduced) {
+      this.#snap();
+      this.#render();
     } else {
-      // Back to full speed within about half a second, then it never varies
-      this.#speed += (1 - this.#speed) * Math.min(1, dt * 6);
-      if (this.#speed > 0.995) this.#speed = 1;
-      this.#phase += (this.#speed * dt) / HeroCarouselController.#STEP_SECONDS;
+      this.#wake();
     }
+  }
 
-    if (this.#phase >= 1) {
-      this.#phase -= 1;
-      this.#cards.forEach(card => {
-        card.slot += 1;
-        if (card.slot > 1) {
-          card.slot = -2;
-          this.#assignNextPhoto(card.el);
+  // The line under the fan names the lifted card, and goes back to the place name after
+  #showName(index) {
+    const motif = this.#motif;
+    if (!motif) return;
+    const text = index >= 0 ? this.#cards[index].dataset.name : motif.dataset.default;
+    if (!text) return;
+    const token = ++this.#motifToken;
+    if (this.#reduced) {
+      motif.textContent = text;
+      return;
+    }
+    motif.classList.add('is-swapping');
+    setTimeout(() => {
+      if (token !== this.#motifToken) return;
+      motif.textContent = text;
+      motif.classList.remove('is-swapping');
+    }, 150);
+  }
+
+  // Stable slots, one per card and centred on its resting place, so a card that moves never
+  // steals the pointer; only inside the band the cards occupy (plus the lifted card's rise)
+  #point(clientX, clientY) {
+    const L = this.#layout;
+    const box = this.#stage.getBoundingClientRect();
+    const y = clientY - box.top;
+    const rise = this.#active >= 0 ? HeroFanController.#OPTIONS.lift * L.fit : 0;
+    if (y < L.bandTop - rise - 8 || y > L.bandBottom + 8) {
+      this.#activate(-1);
+      return;
+    }
+    const slot = Math.max(1e-3, L.options.spacing * L.options.cardWidth * L.fit);
+    const first = L.originX + this.#pose(0).x * L.fit - slot / 2;
+    const t = (clientX - box.left - first) / (slot * this.#count);
+    this.#activate(Math.min(this.#count - 1, Math.max(0, Math.floor(Math.min(0.9999, Math.max(0, t)) * this.#count))));
+  }
+
+  #bindInput() {
+    const stage = this.#stage;
+    stage.addEventListener('pointermove', e => {
+      if (e.pointerType !== 'touch') this.#point(e.clientX, e.clientY);
+    });
+    stage.addEventListener('pointerleave', () => this.#activate(this.#cards.indexOf(document.activeElement)));
+    stage.addEventListener('focusout', e => {
+      if (!stage.contains(e.relatedTarget)) this.#activate(-1);
+    });
+    // The space a lifted card left below itself still belongs to it
+    stage.addEventListener('click', e => {
+      if (e.target === stage && this.#active >= 0) this.#cards[this.#active].click();
+    });
+    this.#cards.forEach((card, i) => {
+      // Tabbing onto a card before the scroll trigger has dealt the fan deals it straight away
+      card.addEventListener('focus', () => {
+        this.#play();
+        this.#activate(i);
+      });
+      card.addEventListener('keydown', e => {
+        const n = this.#count;
+        const next = e.key === 'ArrowRight' ? (i + 1) % n
+          : e.key === 'ArrowLeft' ? (i - 1 + n) % n
+          : e.key === 'Home' ? 0
+          : e.key === 'End' ? n - 1
+          : -1;
+        if (next >= 0) {
+          e.preventDefault();
+          this.#cards[next].focus({ preventScroll: true });
+        } else if (e.key === 'Escape') {
+          this.#activate(-1);
+          card.blur();
         }
       });
-    }
-    this.#render();
-    this.#rafId = requestAnimationFrame(t => this.#tick(t));
-  }
-
-  #measure() {
-    this.#needsMeasure = false;
-    const ref = this.#deck.querySelector('.hero-card-right');
-    const cs = ref ? getComputedStyle(ref) : null;
-    const restX = parseFloat(cs?.getPropertyValue('--card-rest-x')) || 130;
-    const restRot = parseFloat(cs?.getPropertyValue('--card-rest-rot')) || 8;
-    this.#stepDeg = restRot;
-    this.#radius = restX / Math.sin(restRot * Math.PI / 180);
-    const w = ref?.offsetWidth || 0;
-    const h = ref?.offsetHeight || 0;
-    this.#portals.forEach(({ el }) => {
-      el.style.width = `${w}px`;
-      el.style.height = `${h}px`;
-      el.style.marginLeft = `${-w / 2}px`;
     });
-  }
-
-  // Position on the arc for a card `steps` spokes from centre
-  #arc(steps) {
-    const deg = steps * this.#stepDeg;
-    const rad = deg * Math.PI / 180;
-    return `translate3d(${(this.#radius * Math.sin(rad)).toFixed(2)}px, ${(this.#radius * (1 - Math.cos(rad))).toFixed(2)}px, 0) rotate(${deg.toFixed(3)}deg)`;
-  }
-
-  static #smooth(t) {
-    const c = Math.min(1, Math.max(0, t));
-    return c * c * (3 - 2 * c);
-  }
-
-  #render() {
-    if (this.#needsMeasure) this.#measure();
-    const full = HeroCarouselController.#FULL;
-    const portal = HeroCarouselController.#PORTAL;
-    const smooth = HeroCarouselController.#smooth;
-    let glow = 0;
-    this.#cards.forEach(card => {
-      const steps = card.slot + this.#phase;
-      // The arc speed never changes. Near a portal the card sinks back (a slight uniform
-      // shrink) and fades into the glow, which also keeps it off the hero text.
-      const into = smooth((Math.abs(steps) - full) / (portal - full));
-      const scale = 1 - 0.4 * into;
-      const opacity = 1 - into;
-      // Each portal is brightest while a card is half-way through it
-      if (into > 0 && into < 1) glow = Math.max(glow, Math.sin(Math.PI * into));
-
-      const el = card.el;
-      el.style.transform = `${this.#arc(steps)} scale(${scale.toFixed(3)})`;
-      el.style.opacity = opacity.toFixed(3);
-      const z = String(20 + Math.round(steps * 4));
-      if (el.style.zIndex !== z) el.style.zIndex = z;
-
-      // Only cards that are mostly shown can be clicked or focused
-      const interactive = opacity > 0.5;
-      if (interactive !== card.interactive) {
-        card.interactive = interactive;
-        el.setAttribute('tabindex', interactive ? '0' : '-1');
-        el.setAttribute('aria-hidden', interactive ? 'false' : 'true');
-        el.style.pointerEvents = interactive ? '' : 'none';
-      }
-    });
-    // Cards leave on the right exactly as they arrive on the left, so both portals share
-    // one glow; it rests at zero whenever the fan is at rest.
-    this.#portals.forEach(({ el, side }) => {
-      el.style.transform = this.#arc(side * portal);
-      el.style.opacity = (0.85 * glow).toFixed(3);
-    });
-  }
-
-  #assignNextPhoto(el) {
-    const visibleSrcs = this.#cards.filter(c => c.el !== el).map(c => c.el.querySelector('img')?.getAttribute('src'));
-    let asset = this.#pool[this.#nextPoolIdx];
-    for (let i = 0; i < this.#pool.length && visibleSrcs.includes(asset.src); i++) {
-      this.#nextPoolIdx = (this.#nextPoolIdx + 1) % this.#pool.length;
-      asset = this.#pool[this.#nextPoolIdx];
-    }
-    this.#nextPoolIdx = (this.#nextPoolIdx + 1) % this.#pool.length;
-    this.#preload(this.#pool[this.#nextPoolIdx]);
-
-    const slug = asset.src.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase();
-    el.dataset.cat = asset.category;
-    el.dataset.slug = slug;
-    el.dataset.idx = '0';
-    el.setAttribute('aria-label', `View ${asset.caption} (${asset.categoryLabel}) in Lightbox`);
-
-    const source = el.querySelector('source');
-    const img = el.querySelector('img');
-    if (source) source.srcset = asset.gridSrc;
-    if (img) {
-      img.src = asset.src;
-      img.alt = `${asset.caption} · ${asset.categoryLabel}`;
-      img.width = asset.orientation === 'portrait' ? 800 : 1200;
-      img.height = asset.orientation === 'portrait' ? 1000 : 800;
-    }
-    const title = el.querySelector('.monument-title');
-    const context = el.querySelector('.monument-context');
-    if (title) title.textContent = HERO_SHORT_TITLES[asset.caption] || asset.caption;
-    if (context) context.textContent = asset.categoryLabel;
-  }
-
-  #preload(asset) {
-    if (!asset || typeof Image !== 'function') return;
-    const img = new Image();
-    img.decoding = 'async';
-    img.src = asset.gridSrc;
   }
 }
 
@@ -2462,7 +2777,7 @@ const lightboxController    = new LightboxController(transitionCoordinator, curs
 const galleryPresenter      = new GalleryPresenter(repository, transitionCoordinator, lightboxController, cursorLoupe);
 const telemetryHud          = new TelemetryHudController();
 const editorialMotion       = new EditorialMotionController(transitionCoordinator);
-const heroCarousel          = new HeroCarouselController(repository, transitionCoordinator);
+const heroFan               = new HeroFanController(transitionCoordinator);
 const scrollMotion          = new ScrollMotionController();
 
 // Keep the footer copyright year current without a yearly edit
