@@ -2387,6 +2387,54 @@ html[data-theme="dark"] .photo-item img {
   pointer-events: none;
 }
 
+/* Carousel view (LightboxCarousel): the open viewer shows the category as a row of matted
+   prints on a WebGL canvas over the whole lightbox (under the top bar, arrows and caption).
+   In that view the caption and counter sit at the foot, the single print's mat collapses to
+   the slideshow progress line under them, and the thumbnail strip steps aside because the
+   row itself is the way through the set. Zoom (.is-zoom-view) brings the single print back. */
+.lightbox-carousel {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lightbox-carousel[data-hover='open'] { cursor: zoom-in; }
+.lightbox-carousel[data-hover='side'] { cursor: pointer; }
+.lightbox-carousel[data-hover='close'] { cursor: zoom-out; }
+.lightbox-carousel[data-dragging] { cursor: grabbing; }
+
+.lightbox.is-zoom-view .lightbox-carousel {
+  visibility: hidden;
+}
+
+.lightbox.has-carousel:not(.is-zoom-view) {
+  justify-content: flex-end;
+}
+
+.lightbox.has-carousel:not(.is-zoom-view) .lightbox-mat-viewport,
+.lightbox.has-carousel:not(.is-zoom-view) .lightbox-frame-wrap::after,
+.lightbox.has-carousel:not(.is-zoom-view) .lightbox-filmstrip {
+  display: none;
+}
+
+.lightbox.has-carousel:not(.is-zoom-view) .lightbox-frame-wrap {
+  order: 1;
+  width: min(60vw, 420px);
+  height: 2px;
+  margin-top: 0.6rem;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
 .lightbox.open {
   display: flex;
   animation: lightboxFadeIn 0.22s var(--motion-ease-cinematic) forwards;
@@ -2883,6 +2931,9 @@ html[data-theme="dark"] .photo-item img {
     .lightbox-nav:hover {
       transform: scale(1.06);
     }
+  }
+  .lightbox.open.has-carousel:not(.is-zoom-view) {
+    align-content: end;
   }
   .lightbox-prev {
     grid-column: 2;
