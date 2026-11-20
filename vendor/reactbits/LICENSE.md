@@ -33,3 +33,4 @@ variants, https://reactbits.dev):
 - SpecularLight and SpecularEdgeController (section 8d), from "SpecularButton"
 - JellyTabsController (section 8e), from "JellyRadio"
 - SpotlightCardController (section 8f), from "Spotlight Card"
+- LightboxGrainController (section 8g), from "Grainient"
