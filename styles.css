@@ -666,11 +666,11 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
 @keyframes heroScrollHintFade {
   from {
     opacity: 0;
-    transform: translate(-50%, 10px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
   }
 }
 
@@ -1265,8 +1265,12 @@ html.hero-settled .hero-tagline .bm-hl.under i {
 .hero-scroll-hint {
   position: absolute;
   bottom: 1.1rem;
-  left: 50%;
-  transform: translateX(-50%);
+  /* Centred by margins, not a transform, so the reduced-motion reset (transform: none)
+     can't push it off centre */
+  left: 0;
+  right: 0;
+  width: max-content;
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3395,11 +3399,21 @@ footer .ft-sub {
   }
 }
 
+/* Phones: a 44px circle with the arrow alone, like the theme toggle, so the floating button
+   covers as little of the text and photos under it as possible. Its aria-label still says
+   "Return to top". */
 @media (max-width: 600px) {
   .back-to-top {
     bottom: max(1.25rem, calc(0.75rem + env(safe-area-inset-bottom, 0px)));
     right: max(1.25rem, calc(0.75rem + env(safe-area-inset-right, 0px)));
-    padding: 0.45rem 0.85rem;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .btt-text {
+    display: none;
   }
 }
 
@@ -3553,9 +3567,6 @@ footer .ft-sub {
 
   #navbar,
   nav,
-  nav.nav-hidden,
-  .grain,
-  .hero-glow,
   .hero-logo,
   .hero-eyebrow,
   .hero-title,
@@ -3597,14 +3608,37 @@ footer .ft-sub {
   .footer-commission-title,
   .footer-commission-sub,
   .footer-cta-row,
-  .footer-divider,
-  .back-to-top {
+  .footer-divider {
     animation: none !important;
     transition: none !important;
     opacity: 1 !important;
     transform: none !important;
     clip-path: none !important;
     filter: none !important;
+  }
+
+  /* These rest below full opacity on purpose (the grain at 2%, the glow at 72%, TOP hidden
+     until the page scrolls), so they only lose their motion here. Forcing them to opacity 1
+     covered the page in grain and pinned an unclickable TOP button over the hero. */
+  .grain,
+  .hero-glow,
+  .back-to-top {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .back-to-top {
+    transform: none !important;
+  }
+
+  /* The nav still steps out of the way on scroll, just without sliding: the sticky category
+     tabs move up into its place, and would sit under a nav that stayed. */
+  #navbar.nav-hidden {
+    transform: translateY(-100%) !important;
+  }
+
+  #navbar.nav-hidden:focus-within {
+    transform: none !important;
   }
 
   .bm-hl.under i {
