@@ -4904,6 +4904,93 @@ void main() {
   }
 }
 
+/* ── 8i. FILM GRAIN (a fine, living grain behind the whole page) ── */
+
+// A vanilla port of React Bits' Noise (MIT + Commons Clause, notice in
+// vendor/reactbits/LICENSE.md). The component lays a grey grain tile over its parent with
+// mix-blend-mode and moves it by rewriting background-position. Here the grain sits behind
+// the page, never over a photograph, and a blend mode over the whole page would repaint on
+// every scroll, so the tile is painted with its own transparency instead: pixels above
+// mid-grey become champagne specks, pixels below become warm ink specks, and mid-grey is
+// clear, which is what overlay does. The CSS keyframe filmGrainShift moves each layer by
+// transform. Hosts: the fixed .grain behind the page, plus the nav, the pinned category
+// bar and the footer, whose solid fills would otherwise hide it. The photo viewer pauses
+// it (it has its own grain). Reduced motion: still grain, like the component's fps 0.
+// Not ported: dust, scratches, scanlines, flicker, coloured grain.
+class FilmGrainController {
+  // The component's defaults (2026-11-20); strength per theme is --film-grain-opacity
+  static #OPTIONS = Object.freeze({
+    tile: 256,        // px; filmGrainShift in styles.css moves within one tile
+    contrast: 0.6,    // 0 soft and fine, 1 harsh
+    seed: 1013904223,
+    paper: [255, 248, 236],
+    ink: [40, 30, 20],
+  });
+
+  static #HOSTS = ['.grain', '#navbar', '.gallery-controls', '#footer'];
+
+  constructor() {
+    const tile = FilmGrainController.#paintTile();
+    if (!tile?.toBlob || typeof URL === 'undefined' || !URL.createObjectURL) return;
+    tile.toBlob(blob => {
+      if (!blob) return;
+      const root = document.documentElement;
+      root.style.setProperty?.('--film-grain-tile', `url("${URL.createObjectURL(blob)}")`);
+      FilmGrainController.#HOSTS.forEach(selector => {
+        const host = document.querySelector(selector);
+        if (host) FilmGrainController.#attach(host, selector === '.grain');
+      });
+      root.classList.add('has-film-grain');
+    });
+  }
+
+  static #attach(host, isPageLayer) {
+    const layer = document.createElement('div');
+    layer.className = 'film-grain-layer';
+    if (isPageLayer) {
+      host.appendChild(layer);
+      return;
+    }
+    if (typeof host.prepend !== 'function') return;
+    const frame = document.createElement('div');
+    frame.className = 'film-grain';
+    frame.setAttribute('aria-hidden', 'true');
+    frame.appendChild(layer);
+    host.prepend(frame);
+  }
+
+  // The component's generator and triangular sample, written out as transparent specks
+  static #paintTile() {
+    const { tile, contrast, seed, paper, ink } = FilmGrainController.#OPTIONS;
+    const canvas = document.createElement('canvas');
+    canvas.width = tile;
+    canvas.height = tile;
+    const ctx = canvas.getContext?.('2d');
+    if (!ctx?.createImageData) return null;
+    const image = ctx.createImageData(tile, tile);
+    const data = image.data;
+    let state = seed >>> 0;
+    const random = () => {
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const range = 0.5 + contrast * 1.1;
+    for (let i = 0; i < data.length; i += 4) {
+      const value = Math.min(1, Math.max(0, 0.5 + (random() + random() - 1) * range));
+      const tone = value >= 0.5 ? paper : ink;
+      data[i] = tone[0];
+      data[i + 1] = tone[1];
+      data[i + 2] = tone[2];
+      data[i + 3] = Math.round(Math.abs(value - 0.5) * 2 * 255);
+    }
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
+}
+
+
 /* ── 9. APPLICATION BOOTSTRAP ── */
 
 const repository            = new PortfolioRepository(photoData, CATS);
@@ -4920,6 +5007,7 @@ const specularEdge          = new SpecularEdgeController(transitionCoordinator);
 const jellyTabs             = new JellyTabsController(transitionCoordinator);
 const spotlightCards        = new SpotlightCardController(transitionCoordinator);
 const lightboxGrain         = new LightboxGrainController(transitionCoordinator);
+const filmGrain             = new FilmGrainController();
 lightboxController.attachCarousel(new LightboxCarousel(document.getElementById('lightbox'), transitionCoordinator));
 
 // Keep the footer copyright year current without a yearly edit

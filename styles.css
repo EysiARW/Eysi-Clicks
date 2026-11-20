@@ -129,6 +129,8 @@ html[data-theme="light"] {
   /* Spotlight on the Coverage cards: a white pool brightens the cream card, bronze edge */
   --spotlight-fill:      rgba(255, 255, 255, 0.85);
   --spotlight-edge:      rgba(130, 106, 78, 0.6);
+  /* Film grain behind the page: on cream only its dark (warm ink) specks show */
+  --film-grain-opacity:  0.1;
   --header-height:    5rem;
   --shutter-ease:     cubic-bezier(0.22, 1, 0.36, 1);
   --motion-ease-cinematic: cubic-bezier(0.22, 1, 0.36, 1);
@@ -213,6 +215,8 @@ html[data-theme="dark"] {
   --specular-paper-base: #826a4e;
   --spotlight-fill:      rgba(243, 231, 211, 0.1);
   --spotlight-edge:      rgba(197, 173, 141, 0.6);
+  /* On near-black only the light (champagne) specks show */
+  --film-grain-opacity:  0.08;
 }
 
 .sr-only {
@@ -250,6 +254,9 @@ html {
 /* ── 2. BASE / BODY ── */
 
 body {
+  /* A stacking context of its own, so the page grain (z-index -1) paints above this
+     background and below everything else */
+  isolation: isolate;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-interphases);
@@ -283,12 +290,17 @@ main {
 }
 
 
-/* ── 3. ARCHIVAL GRAIN & BESPOKE OPTICAL LOUPE CURSOR ── */
+/* ── 3. FILM GRAIN ── */
 
+/* Behind the whole page, never over a photograph. Without JavaScript (and on 404.html)
+   .grain is a still SVG grain. FilmGrainController (section 8i of app.js) turns it into
+   living film grain and adds the same layer to the surfaces that cover it: the nav, the
+   pinned category bar and the footer. Each .film-grain-layer is one tile larger than its
+   box and jumps to a new offset 24 times a second, so only its transform changes. */
 .grain {
   position: fixed;
   inset: 0;
-  z-index: 1;
+  z-index: -1;
   pointer-events: none;
   opacity: 0.022;
   contain: strict;
@@ -298,6 +310,90 @@ main {
 
 html[data-theme="dark"] .grain {
   opacity: 0.018;
+}
+
+html.has-film-grain .grain {
+  opacity: 1;
+  background: none;
+}
+
+.film-grain {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.film-grain-layer {
+  position: absolute;
+  top: -256px;
+  left: -256px;
+  right: 0;
+  bottom: 0;
+  opacity: var(--film-grain-opacity);
+  background-image: var(--film-grain-tile);
+  background-size: 256px 256px;
+  image-rendering: pixelated;
+  will-change: transform;
+  animation: filmGrainShift 0.667s steps(1, end) infinite;
+}
+
+/* The nav's own fill fades out downwards, so its grain fades with it and the page grain
+   shows through the rest. Its backdrop blur is dropped while the grain lives: it smeared the
+   page grain into a darker, flat band and re-blurred it 24 times a second. */
+html.has-film-grain nav {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+nav > .film-grain {
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.96), transparent);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.96), transparent);
+}
+
+nav.is-scrolled > .film-grain {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* The pinned category bar spans the window; on phones it is not pinned and has no fill */
+.gallery-controls > .film-grain {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .gallery-controls > .film-grain {
+    display: block;
+    left: 50%;
+    right: auto;
+    width: 100vw;
+    transform: translateX(-50%);
+  }
+}
+
+/* The photo viewer covers the page and has its own grain */
+html:has(#lightbox.open) .film-grain-layer {
+  animation-play-state: paused;
+}
+
+@keyframes filmGrainShift {
+  0%     { transform: translate3d(152px, 76px, 0); }
+  6.25%  { transform: translate3d(138px, 252px, 0); }
+  12.5%  { transform: translate3d(172px, 135px, 0); }
+  18.75% { transform: translate3d(222px, 234px, 0); }
+  25%    { transform: translate3d(19px, 255px, 0); }
+  31.25% { transform: translate3d(53px, 49px, 0); }
+  37.5%  { transform: translate3d(254px, 15px, 0); }
+  43.75% { transform: translate3d(98px, 7px, 0); }
+  50%    { transform: translate3d(18px, 172px, 0); }
+  56.25% { transform: translate3d(236px, 207px, 0); }
+  62.5%  { transform: translate3d(189px, 16px, 0); }
+  68.75% { transform: translate3d(158px, 126px, 0); }
+  75%    { transform: translate3d(52px, 228px, 0); }
+  81.25% { transform: translate3d(37px, 6px, 0); }
+  87.5%  { transform: translate3d(183px, 189px, 0); }
+  93.75% { transform: translate3d(9px, 86px, 0); }
 }
 
 
@@ -3617,10 +3713,12 @@ footer .ft-sub {
     filter: none !important;
   }
 
-  /* These rest below full opacity on purpose (the grain at 2%, the glow at 72%, TOP hidden
+  /* These rest below full opacity on purpose (the grain, the glow at 72%, TOP hidden
      until the page scrolls), so they only lose their motion here. Forcing them to opacity 1
-     covered the page in grain and pinned an unclickable TOP button over the hero. */
+     covered the page in grain and pinned an unclickable TOP button over the hero. The film
+     grain stays still, like a paper texture. */
   .grain,
+  .film-grain-layer,
   .hero-glow,
   .back-to-top {
     animation: none !important;
