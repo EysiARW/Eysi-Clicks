@@ -34,3 +34,4 @@ variants, https://reactbits.dev):
 - JellyTabsController (section 8e), from "JellyRadio"
 - SpotlightCardController (section 8f), from "Spotlight Card"
 - LightboxGrainController (section 8g), from "Grainient"
+- LightboxCarousel (section 8h), from "FlexCarousel" (ported to WebGL2 without the ogl library)

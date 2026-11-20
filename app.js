@@ -455,6 +455,7 @@ class LightboxController {
   #panGlide = null;
   #kenBurnsFlip = false;
   #chromeTimer = null;
+  #carousel = null;
 
   constructor(transitionCoordinator, cursorLoupe) {
     this.#transitionCoordinator = transitionCoordinator;
@@ -499,6 +500,39 @@ class LightboxController {
     return this.#currentIndex;
   }
 
+  // The bending row of prints (LightboxCarousel) becomes the view when WebGL2 is there;
+  // this controller keeps ownership of the current photo, caption, hash, keys and slideshow.
+  attachCarousel(carousel) {
+    if (!carousel?.active) return;
+    this.#carousel = carousel;
+    carousel.onSettle = index => this.#selectFromCarousel(index);
+    carousel.onBackdrop = () => this.close();
+    // A #photo- link opens the viewer while the page starts, before the row exists
+    if (this.isOpen && this.#images.length) {
+      this.#resetZoom();
+      carousel.open(this.#images, this.#currentIndex);
+    }
+  }
+
+  get #carouselView() {
+    return Boolean(this.#carousel?.isShowing);
+  }
+
+  #selectFromCarousel(index) {
+    if (!this.isOpen || index === this.#currentIndex || index < 0 || index >= this.#images.length) return;
+    this.#restartSlideshowTimer();
+    this.#currentIndex = index;
+    this.#nextKenBurns();
+    this.#updateView();
+  }
+
+  // Zoom shows the single matted print (with pan) in place of the row
+  #setZoomView(on) {
+    if (!this.#carousel) return;
+    this.#lightboxEl?.classList.toggle('is-zoom-view', on);
+    this.#carousel.setHidden(on);
+  }
+
   open(images, index, sourceFigure = null) {
     if (!images || !images.length || !this.#lightboxEl) return;
     this.#cursorLoupe?.hide();
@@ -513,9 +547,11 @@ class LightboxController {
     }
 
     this.#renderFilmstrip();
+    this.#carousel?.open(images, this.#currentIndex);
     this.#updateView();
 
-    const canFly = this.#canFly(sourceFigure);
+    // The row has its own entrance, so the single-print flight is only for the fallback view
+    const canFly = !this.#carouselView && this.#canFly(sourceFigure);
     if (canFly) this.#lightboxEl.classList.add('flip-open', 'is-flying');
     this.#lightboxEl.classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -605,7 +641,7 @@ class LightboxController {
     if (!this.#lightboxEl || !this.isOpen) return;
     this.#flightToken++;
     this.#settleSwipe();
-    if (!this.#isZoomed) this.#flyOut();
+    if (!this.#isZoomed && !this.#carouselView) this.#flyOut();
     this.#lightboxEl.classList.remove('flip-open', 'is-flying');
     this.stopSlideshow();
     this.#setKenBurns('');
@@ -624,6 +660,7 @@ class LightboxController {
     }
 
     const restoreTarget = this.#lastFocusedElement;
+    this.#carousel?.close();
     this.#lightboxEl.classList.remove('open');
     document.body.style.overflow = '';
     this.#clearSourceTransitionClass();
@@ -760,6 +797,7 @@ class LightboxController {
       this.stopSlideshow();
       this.#isZoomed = true;
       this.#state = LightboxState.ZOOMED;
+      this.#setZoomView(true);
       this.#panBounds = this.#measurePanBounds();
       this.#imgEl.classList.add('zoomed');
       if (this.#zoomBtn) {
@@ -771,6 +809,7 @@ class LightboxController {
     } else {
       this.#isZoomed = true;
       this.#state = LightboxState.ZOOMED;
+      this.#setZoomView(true);
       this.#panBounds = this.#measurePanBounds();
       this.#imgEl.classList.add('zoomed');
       if (this.#zoomBtn) {
@@ -875,6 +914,7 @@ class LightboxController {
       this.#imgEl.style.transform = '';
     }
     if (this.#zoomBtn) this.#zoomBtn.setAttribute('aria-pressed', 'false');
+    this.#setZoomView(false);
   }
 
   #measurePanBounds() {
@@ -955,6 +995,7 @@ class LightboxController {
     }
 
     this.#syncFilmstripActive();
+    this.#carousel?.show(this.#currentIndex);
 
     // Preload and asynchronously decode ±2 adjacent frames for zero-latency browsing
     const len = this.#images.length;
@@ -1234,7 +1275,7 @@ class LightboxController {
             this.#imgEl.style.transform = `scale(1.85) translate3d(${this.#panX / 1.85}px, ${this.#panY / 1.85}px, 0)`;
           }
           this.#trackPan(touchEndX, touchEndY);
-        } else if (!this.#isZoomed && !isMultiTouch && this.#canFollowSwipe()) {
+        } else if (!this.#isZoomed && !isMultiTouch && !this.#carouselView && this.#canFollowSwipe()) {
           const deltaX = touchEndX - touchStartX;
           const deltaY = touchEndY - touchStartY;
           if (!swipeAxis && Math.hypot(deltaX, deltaY) > 8) {
@@ -1261,6 +1302,11 @@ class LightboxController {
       if (isMultiTouch) return;
       const deltaX = touchEndX - touchStartX;
       const deltaY = touchEndY - touchStartY;
+      // The row moves under the finger itself; only the swipe down to close stays here
+      if (this.#carouselView) {
+        if (deltaY > 80 && Math.abs(deltaX) < 60) this.close();
+        return;
+      }
       if (swipeAxis === 'x') {
         swipeAxis = null;
         // A finger that stopped before lifting is a drop, not a flick
@@ -1283,6 +1329,7 @@ class LightboxController {
 
       if (e.key === 'Escape') {
         e.preventDefault();
+        if (this.#carousel?.closeFocus()) return;
         if (this.#isZoomed) {
           this.#resetZoom();
         } else {
@@ -4086,6 +4133,1173 @@ void main() {
   }
 }
 
+/* ── 8h. LIGHTBOX CAROUSEL (the photo viewer as a row of matted prints bending through glass) ── */
+
+// A vanilla port of React Bits' FlexCarousel (MIT + Commons Clause, notice in
+// vendor/reactbits/LICENSE.md), written against WebGL2 directly instead of the `ogl` library.
+// The open viewer shows the category as a row of prints; past the edge of an invisible lens
+// the row bends away (the "liquid" preset). LightboxController still owns everything else:
+// which photo is current, the caption and counter, the #photo- hash, keys, arrows and the
+// slideshow. Arrows, keys and the slideshow glide the row; dragging, flicking, wheeling or
+// clicking a side print moves it and reports the photo it lands on. Clicking the centred
+// print enlarges it in place (the others part and the bend melts); Escape or another click
+// lowers it. Zoom swaps to the single matted print with pan. Changes from the original to fit
+// the site: every card wears the off-white mat of the print view, photos are never cropped
+// (no 8% overscan, no in-card parallax), the "bloom" intro replays on every opening, only
+// the centred print loads its full-size file, a side print is centred on click rather than
+// also opened, and the component's caption, counter, keyboard and autoplay are left to the
+// viewer. Reduced motion: no intro bloom or squeeze, and moves land without gliding.
+// No WebGL2, or a lost GPU context: the canvas goes and the single-print viewer returns.
+class LightboxCarousel {
+  static #OPTIONS = Object.freeze({
+    // "liquid" preset, with the bend and the rainbow split toned down: across a full screen
+    // the preset curled the outer prints into the top bar and fringed photos with colour
+    lensWidth: 0.74,
+    lensHeight: 1.18,
+    tilt: 62,
+    roundness: 1,
+    bend: 0.22,         // preset 0.34
+    reach: 0.38,
+    dispersion: 0.18,   // preset 0.45
+    // component props from the owner's integration
+    gap: 12,
+    squeeze: 0.2,
+    // fitted to the viewer
+    cardHeight: 0.76,   // share of the band between the top bar and the caption
+    radius: 2,          // the print mat's corner
+    mat: 0.04,          // mat width as a share of card height; the bottom is 1.5x, like the print view
+    introSeconds: 1.6,  // "bloom"
+  });
+  static #TAPS = 12;
+  static #PIXEL_BUDGET = 4.5e6;
+  static #MAT_COLOR = [250 / 255, 248 / 255, 245 / 255];
+  static #EMPTY = [28 / 255, 28 / 255, 32 / 255];
+
+  static #CARD_VERTEX = `#version 300 es
+in vec2 aPosition;
+uniform vec4 uRect;
+uniform vec2 uResolution;
+out vec2 vLocal;
+void main() {
+  vLocal = vec2(aPosition.x, -aPosition.y) * uRect.zw;
+  vec2 px = uRect.xy + vLocal;
+  gl_Position = vec4(px.x / uResolution.x * 2.0 - 1.0, 1.0 - px.y / uResolution.y * 2.0, 0.0, 1.0);
+}`;
+
+  // A print on its mat: the photo fills the inner box at its own aspect ratio, never cropped
+  static #CARD_FRAGMENT = `#version 300 es
+precision highp float;
+uniform sampler2D tMap;
+uniform vec2 uSize;
+uniform vec3 uMat;
+uniform float uRadius;
+uniform float uAlpha;
+uniform float uReady;
+uniform float uDpr;
+uniform vec3 uPlaceholder;
+uniform vec3 uMatColor;
+in vec2 vLocal;
+out vec4 fragColor;
+
+float roundedBox(vec2 p, vec2 b, float r) {
+  vec2 q = abs(p) - b + r;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+void main() {
+  vec2 hs = uSize * 0.5;
+  float sd = roundedBox(vLocal, hs, min(uRadius, min(hs.x, hs.y)));
+  float mask = clamp(0.5 - sd * uDpr, 0.0, 1.0);
+  vec2 innerMin = vec2(-hs.x + uMat.x, -hs.y + uMat.y);
+  vec2 innerMax = vec2(hs.x - uMat.x, hs.y - uMat.z);
+  vec2 innerHalf = max((innerMax - innerMin) * 0.5, vec2(0.5));
+  float sdIn = roundedBox(vLocal - (innerMin + innerMax) * 0.5, innerHalf, 0.0);
+  float photo = clamp(0.5 - sdIn * uDpr, 0.0, 1.0);
+  vec2 uv = clamp((vLocal - innerMin) / (innerHalf * 2.0), 0.0, 1.0);
+  vec3 inside = mix(uPlaceholder, texture(tMap, uv).rgb, uReady);
+  vec3 color = mix(uMatColor, inside, photo);
+  float alpha = mask * uAlpha;
+  fragColor = vec4(color * alpha, alpha);
+}`;
+
+  static #LENS_VERTEX = `#version 300 es
+in vec2 aPosition;
+void main() {
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+}`;
+
+  static #LENS_FRAGMENT = `#version 300 es
+precision highp float;
+uniform sampler2D tScene;
+uniform vec2 uResolution;
+uniform float uDpr;
+uniform vec2 uCenter;
+uniform vec2 uHalf;
+uniform float uAngle;
+uniform float uExponent;
+uniform float uInner;
+uniform float uOuter;
+uniform float uFlow;
+uniform float uDispersion;
+uniform float uStrength;
+uniform float uSceneAlpha;
+out vec4 fragColor;
+
+void main() {
+  vec2 frag = gl_FragCoord.xy / uDpr;
+  vec2 uv = frag / uResolution;
+  vec2 rel = frag - vec2(uCenter.x, uResolution.y - uCenter.y);
+  float ca = cos(uAngle);
+  float sa = sin(uAngle);
+  vec2 local = vec2(ca * rel.x + sa * rel.y, -sa * rel.x + ca * rel.y);
+  vec2 k = max(abs(local) / uHalf, vec2(1e-5));
+  float nd = pow(pow(k.x, uExponent) + pow(k.y, uExponent), 1.0 / uExponent);
+  vec2 grad = pow(k, vec2(uExponent - 1.0)) * sign(local) / uHalf * pow(nd, 1.0 - uExponent);
+  float glen = max(length(grad), 1e-6);
+  float edge = (nd - 1.0) / glen;
+  vec2 outward = grad / glen;
+  vec2 normal = vec2(ca * outward.x - sa * outward.y, sa * outward.x + ca * outward.y);
+  vec2 along = vec2(-normal.y, normal.x);
+
+  float t = clamp((edge + uInner) / (uInner + uOuter), 0.0, 1.0);
+  float ramp = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+  float slope = 16.0 * t * t * (1.0 - t) * (1.0 - t);
+  float reachX = rel.x / (uResolution.x * 0.5);
+  float side = smoothstep(0.02, 0.3, abs(reachX)) * sign(reachX);
+  float lift = ramp * side * uFlow * uStrength;
+  vec2 swirl = along * along.y * side * slope * uFlow * uStrength * 0.35;
+  vec2 drift = vec2(0.0, -lift) - swirl;
+  vec2 shifted = uv + drift / uResolution;
+
+  vec2 texels = uResolution * uDpr;
+  vec2 gx = dFdx(shifted);
+  vec2 gy = dFdy(shifted);
+  gx *= min(1.0, 3.0 / max(length(gx * texels), 1e-4));
+  gy *= min(1.0, 3.0 / max(length(gy * texels), 1e-4));
+
+  vec4 color = textureGrad(tScene, shifted, gx, gy);
+  vec2 spread = vec2(0.0, side * slope * uFlow * uStrength) / uResolution * uDispersion;
+  float spreadPx = length(spread * texels);
+  if (color.a > 0.002 && spreadPx > 0.25) {
+    vec3 base = color.rgb / color.a;
+    vec3 sumColor = vec3(0.0);
+    vec3 sumWeight = vec3(0.0);
+    for (int i = 0; i < ${LightboxCarousel.#TAPS}; i++) {
+      float s = (float(i) + 0.5) / float(${LightboxCarousel.#TAPS});
+      vec4 c = textureGrad(tScene, shifted + spread * (s - 0.5), gx, gy);
+      vec3 w = max(1.0 - abs(vec3(s) - vec3(0.15, 0.5, 0.85)) * 2.6, 0.0) * c.a;
+      sumColor += c.rgb * (w / max(c.a, 0.002));
+      sumWeight += w;
+    }
+    vec3 split = mix(base, sumColor / max(sumWeight, vec3(1e-4)), clamp(sumWeight * 2.0, 0.0, 1.0));
+    color.rgb = mix(color.rgb, clamp(split, 0.0, 1.0) * color.a, smoothstep(0.25, 1.5, spreadPx));
+  }
+
+  fragColor = color * uSceneAlpha;
+}`;
+
+  #transitionCoordinator;
+  #lightbox;
+  #canvas = null;
+  #gl = null;
+  #card = null;
+  #lens = null;
+  #quad = null;
+  #triangle = null;
+  #target = { texture: null, fbo: null, width: 0, height: 0 };
+  #anisotropy = null;
+  #probe = null;
+
+  #slots = [];
+  #key = '';
+  #view = { width: 1, height: 1, dpr: 1, top: 0, bottom: 1 };
+  #pos = 0;
+  #vel = 0;
+  #goal = 0;
+  #mode = 'spring';
+  #wheelAt = 0;
+  #raf = 0;
+  #last = 0;
+  #dirty = true;
+  #resizePending = true;
+  #open = false;
+  #hidden = false;
+  #activeIndex = -1;
+  #reported = -1;
+  #pendingIndex = -1;
+  #resnap = false;
+  #layout = null;
+  #energy = 0;
+  #lastPos = 0;
+  #lensBase = 0;
+  #hiSlot = null;
+  #instances = [];
+  #hover = '';
+  #focus = { index: -1, t: 0, v: 0, target: 0 };
+  #intro = { t: 0, running: false, done: false, since: 0 };
+  #pointer = {
+    x: 0, y: 0, over: false, down: false, id: -1, startX: 0, startY: 0, startPos: 0,
+    dragging: false, dragged: false, touch: false, samples: [],
+  };
+
+  onSettle = null;     // (index) => void: the row came to rest on another photo
+  onBackdrop = null;   // () => void: a click that hit no print
+
+  constructor(lightbox, transitionCoordinator) {
+    this.#lightbox = lightbox;
+    this.#transitionCoordinator = transitionCoordinator;
+    if (!lightbox || typeof requestAnimationFrame !== 'function' || typeof ResizeObserver !== 'function'
+      || typeof lightbox.insertBefore !== 'function') return;
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext?.('webgl2', {
+      alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false,
+    });
+    if (!gl || !this.#setup(gl)) return;
+    canvas.className = 'lightbox-carousel';
+    canvas.setAttribute('aria-hidden', 'true');
+    canvas.addEventListener('webglcontextlost', () => this.#teardown());
+    lightbox.insertBefore(canvas, lightbox.querySelector('.lightbox-topbar'));
+    this.#canvas = canvas;
+    this.#gl = gl;
+    this.#probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    this.#bind();
+  }
+
+  get active() {
+    return Boolean(this.#gl);
+  }
+
+  // True while the row is the visible view (open, and not swapped out for Zoom)
+  get isShowing() {
+    return Boolean(this.#gl) && this.#open && !this.#hidden;
+  }
+
+  get #reduced() {
+    return Boolean(this.#transitionCoordinator?.prefersReducedMotion);
+  }
+
+  // ── WebGL setup ──
+
+  static #program(gl, vertexSource, fragmentSource) {
+    const compile = (type, source) => {
+      const shader = gl.createShader(type);
+      if (!shader) return null;
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
+      gl.deleteShader(shader);
+      return null;
+    };
+    const vertex = compile(gl.VERTEX_SHADER, vertexSource);
+    const fragment = compile(gl.FRAGMENT_SHADER, fragmentSource);
+    const program = gl.createProgram();
+    if (!vertex || !fragment || !program) return null;
+    gl.attachShader(program, vertex);
+    gl.attachShader(program, fragment);
+    gl.bindAttribLocation(program, 0, 'aPosition');
+    gl.linkProgram(program);
+    gl.deleteShader(vertex);
+    gl.deleteShader(fragment);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.deleteProgram(program);
+      return null;
+    }
+    const uniforms = {};
+    const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < count; i++) {
+      const info = gl.getActiveUniform(program, i);
+      if (info) uniforms[info.name] = gl.getUniformLocation(program, info.name);
+    }
+    return { program, uniforms };
+  }
+
+  static #geometry(gl, points) {
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(points), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    return vao;
+  }
+
+  #setup(gl) {
+    this.#card = LightboxCarousel.#program(gl, LightboxCarousel.#CARD_VERTEX, LightboxCarousel.#CARD_FRAGMENT);
+    this.#lens = LightboxCarousel.#program(gl, LightboxCarousel.#LENS_VERTEX, LightboxCarousel.#LENS_FRAGMENT);
+    if (!this.#card || !this.#lens) return false;
+    this.#quad = LightboxCarousel.#geometry(gl, [-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]);
+    this.#triangle = LightboxCarousel.#geometry(gl, [-1, -1, 3, -1, -1, 3]);
+    this.#anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
+    this.#target.texture = gl.createTexture();
+    this.#target.fbo = gl.createFramebuffer();
+    return true;
+  }
+
+  #newTexture() {
+    const gl = this.#gl;
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([28, 28, 32, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return texture;
+  }
+
+  #upload(texture, image) {
+    const gl = this.#gl;
+    if (!gl) return;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    if (this.#anisotropy) {
+      gl.texParameterf(gl.TEXTURE_2D, this.#anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+    }
+    this.#dirty = true;
+  }
+
+  // ── Photos ──
+
+  #loadSlot(asset, index) {
+    const slot = {
+      asset,
+      index,
+      texture: this.#newTexture(),
+      // A first guess from the photo's orientation, so the row has its shape before loading
+      aspect: asset.orientation === 'portrait' ? 0.8 : 1.5,
+      loaded: false,
+      failed: false,
+      ready: 0,
+      color: LightboxCarousel.#EMPTY,
+      grid: null,
+      full: null,
+      fullLoading: false,
+    };
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => {
+      if (!this.#slots.includes(slot) || !this.#gl) return;
+      slot.grid = image;
+      slot.aspect = (image.naturalWidth || 1) / (image.naturalHeight || 1);
+      slot.color = this.#averageColor(image);
+      this.#upload(slot.texture, image);
+      slot.loaded = true;
+      this.#start();
+    };
+    image.onerror = () => {
+      // The small derivative is missing: fall back to the full WebP, as the grid does
+      if (!slot.failed && image.src.indexOf('.grid.webp') !== -1 && asset.webpSrc) {
+        slot.failed = true;
+        image.src = asset.webpSrc;
+        return;
+      }
+      slot.failed = true;
+      this.#dirty = true;
+      this.#start();
+    };
+    image.src = asset.gridSrc || asset.webpSrc || asset.src;
+    return slot;
+  }
+
+  #averageColor(image) {
+    try {
+      const ctx = this.#probe;
+      if (!ctx) return LightboxCarousel.#EMPTY;
+      ctx.canvas.width = 8;
+      ctx.canvas.height = 8;
+      ctx.drawImage(image, 0, 0, 8, 8);
+      const data = ctx.getImageData(0, 0, 8, 8).data;
+      const sum = [0, 0, 0];
+      for (let i = 0; i < data.length; i += 4) {
+        sum[0] += data[i];
+        sum[1] += data[i + 1];
+        sum[2] += data[i + 2];
+      }
+      return sum.map(v => v / 64 / 255);
+    } catch {
+      return LightboxCarousel.#EMPTY;
+    }
+  }
+
+  #setItems(images) {
+    const key = images.map(asset => asset.src).join('|');
+    if (key === this.#key && this.#slots.length) return;
+    this.#key = key;
+    this.#slots.forEach(slot => this.#gl?.deleteTexture(slot.texture));
+    this.#hiSlot = null;
+    this.#layout = null;
+    this.#slots = images.map((asset, i) => this.#loadSlot(asset, i));
+  }
+
+  // The centred print swaps its 960px texture for the full-size file the print view uses;
+  // the one it replaces goes back to the small one, so only one large texture is held.
+  #sharpen(index) {
+    const slot = this.#slots[index];
+    if (!slot || slot === this.#hiSlot) return;
+    if (this.#hiSlot?.grid) this.#upload(this.#hiSlot.texture, this.#hiSlot.grid);
+    this.#hiSlot = null;
+    if (!slot.loaded) return;
+    if (slot.full) {
+      this.#upload(slot.texture, slot.full);
+      this.#hiSlot = slot;
+      return;
+    }
+    if (slot.fullLoading || !slot.asset.webpSrc) return;
+    slot.fullLoading = true;
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => {
+      slot.fullLoading = false;
+      if (!this.#slots.includes(slot) || !this.#gl) return;
+      slot.full = image;
+      if (this.#activeIndex === slot.index && this.#settled) this.#sharpen(slot.index);
+    };
+    image.onerror = () => { slot.fullLoading = false; };
+    image.src = slot.asset.webpSrc;
+  }
+
+  // ── Viewer API ──
+
+  open(images, index) {
+    if (!this.#gl || !images?.length) return;
+    this.#setItems(images);
+    this.#open = true;
+    this.#hidden = false;
+    this.#lightbox.classList.add('has-carousel');
+    this.#focus.target = 0;
+    this.#focus.t = 0;
+    this.#focus.v = 0;
+    this.#intro.t = 0;
+    this.#intro.running = false;
+    this.#intro.done = false;
+    this.#intro.since = 0;
+    this.#jumpTo(index);
+    this.#reported = index;
+    this.#energy = 0;
+    this.#resizePending = true;
+    this.#start();
+  }
+
+  close() {
+    this.#open = false;
+    cancelAnimationFrame(this.#raf);
+    this.#raf = 0;
+    this.#pointer.down = false;
+    this.#pointer.dragging = false;
+    this.#canvas?.removeAttribute('data-dragging');
+    this.#setHover('');
+    // A blank canvas, so the next opening never flashes the last frame
+    if (this.#gl) {
+      this.#gl.bindFramebuffer(this.#gl.FRAMEBUFFER, null);
+      this.#gl.clearColor(0, 0, 0, 0);
+      this.#gl.clear(this.#gl.COLOR_BUFFER_BIT);
+    }
+  }
+
+  // The viewer moved to another photo (arrows, keys, slideshow, hash)
+  show(index) {
+    if (!this.isShowing || index < 0 || index >= this.#slots.length) return;
+    this.#reported = index;
+    this.closeFocus();
+    if (!this.#intro.done || this.#reduced) {
+      this.#jumpTo(index);
+    } else if (!this.#layout) {
+      this.#jumpTo(index);
+    } else {
+      const m = this.#layout;
+      this.#goal += LightboxCarousel.#wrap(m.centers[index] - this.#goal, m.loop);
+      this.#mode = 'spring';
+    }
+    this.#dirty = true;
+    this.#start();
+  }
+
+  setHidden(hidden) {
+    this.#hidden = Boolean(hidden);
+    if (this.#hidden) {
+      cancelAnimationFrame(this.#raf);
+      this.#raf = 0;
+      return;
+    }
+    this.#dirty = true;
+    this.#start();
+  }
+
+  // Lowers an enlarged print; true when there was one
+  closeFocus() {
+    if (this.#focus.target === 0) return false;
+    this.#focus.target = 0;
+    if (this.#reduced) {
+      this.#focus.t = 0;
+      this.#focus.v = 0;
+    }
+    this.#dirty = true;
+    this.#start();
+    return true;
+  }
+
+  #openFocus(index) {
+    this.#focus.index = index;
+    this.#focus.target = 1;
+    if (this.#reduced) {
+      this.#focus.t = 1;
+      this.#focus.v = 0;
+    }
+    this.#dirty = true;
+    this.#start();
+  }
+
+  #jumpTo(index) {
+    this.#pendingIndex = index;
+    this.#resnap = true;
+  }
+
+  // ── Layout (ported) ──
+
+  static #wrap(value, size) {
+    return ((((value + size / 2) % size) + size) % size) - size / 2;
+  }
+
+  static #clamp01(value) {
+    return Math.min(Math.max(value, 0), 1);
+  }
+
+  static #easeOut(value) {
+    return 1 - Math.pow(1 - LightboxCarousel.#clamp01(value), 3);
+  }
+
+  static #easeInOut(value) {
+    const t = LightboxCarousel.#clamp01(value);
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  #metrics() {
+    const o = LightboxCarousel.#OPTIONS;
+    const bandH = Math.max(80, this.#view.bottom - this.#view.top);
+    // Prints share one height, so cap it where a 3:2 print (most of the set) still fits
+    // within 92% of the width: a 3:2 card is about 1.43x its height once matted
+    const cardH = Math.max(40, Math.min(o.cardHeight * bandH, (this.#view.width * 0.92) / 1.43));
+    const mat = Math.max(4, Math.round(cardH * o.mat));
+    const matBottom = Math.round(mat * 1.5);
+    const innerH = cardH - mat - matBottom;
+    const widths = this.#slots.map(slot => slot.aspect * innerH + mat * 2);
+    const centers = [];
+    let cursor = 0;
+    widths.forEach(w => {
+      centers.push(cursor + w / 2);
+      cursor += w + o.gap;
+    });
+    return {
+      cardH, mat, matBottom, bandH, widths, centers, gap: o.gap,
+      loop: Math.max(cursor, 1), homeY: (this.#view.top + this.#view.bottom) / 2,
+    };
+  }
+
+  #nearest(m, at) {
+    let best = 0;
+    let bestDist = Infinity;
+    m.centers.forEach((center, i) => {
+      const dist = Math.abs(LightboxCarousel.#wrap(center - at, m.loop));
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    });
+    return best;
+  }
+
+  #snapPoint(m, at) {
+    const i = this.#nearest(m, at);
+    return at + LightboxCarousel.#wrap(m.centers[i] - at, m.loop);
+  }
+
+  #remap(from, to, at) {
+    const i = this.#nearest(from, at);
+    const offset = LightboxCarousel.#wrap(at - from.centers[i], from.loop);
+    const cycles = Math.round((at - offset - from.centers[i]) / from.loop);
+    return cycles * to.loop + to.centers[i] + offset * (to.widths[i] / from.widths[i]);
+  }
+
+  #step(m, delta) {
+    let at = this.#snapPoint(m, this.#goal);
+    let index = this.#nearest(m, at);
+    const n = m.centers.length;
+    for (let k = 0; k < Math.abs(delta); k++) {
+      const next = (index + (delta > 0 ? 1 : n - 1)) % n;
+      at += delta > 0
+        ? m.widths[index] / 2 + m.gap + m.widths[next] / 2
+        : -(m.widths[next] / 2 + m.gap + m.widths[index] / 2);
+      index = next;
+    }
+    this.#goal = at;
+    this.#mode = 'spring';
+  }
+
+  get #settled() {
+    return this.#mode === 'spring' && !this.#pointer.dragging
+      && Math.abs(this.#goal - this.#pos) < 1.5 && Math.abs(this.#vel) < 30;
+  }
+
+  // ── Size ──
+
+  #applyResize() {
+    const width = Math.max(1, this.#lightbox.clientWidth);
+    const height = Math.max(1, this.#lightbox.clientHeight);
+    const budget = Math.sqrt(LightboxCarousel.#PIXEL_BUDGET / (width * height));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2, budget);
+    this.#view.width = width;
+    this.#view.height = height;
+    this.#view.dpr = dpr;
+    this.#canvas.width = Math.max(2, Math.round(width * dpr));
+    this.#canvas.height = Math.max(2, Math.round(height * dpr));
+    const gl = this.#gl;
+    const t = this.#target;
+    if (t.width !== this.#canvas.width || t.height !== this.#canvas.height) {
+      t.width = this.#canvas.width;
+      t.height = this.#canvas.height;
+      gl.bindTexture(gl.TEXTURE_2D, t.texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, t.width, t.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.texture, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    this.#measureBand();
+    this.#dirty = true;
+  }
+
+  // The row lives in the band between the top bar and whatever sits under it at the bottom
+  // (the caption, plus the arrow row on phones and tablets)
+  #measureBand() {
+    const box = this.#lightbox.getBoundingClientRect();
+    const height = this.#view.height;
+    const topbar = this.#lightbox.querySelector('.lightbox-topbar')?.getBoundingClientRect();
+    let top = topbar ? topbar.bottom - box.top : 64;
+    let bottom = height - 72;
+    ['.lightbox-caption', '#lightbox-prev', '#lightbox-next'].forEach(selector => {
+      const r = this.#lightbox.querySelector(selector)?.getBoundingClientRect();
+      if (!r || !r.height) return;
+      const y = r.top - box.top;
+      if (y > height * 0.5) bottom = Math.min(bottom, y);
+    });
+    top += 8;
+    bottom -= 8;
+    if (bottom - top < 120) {
+      top = Math.max(0, (top + bottom) / 2 - 60);
+      bottom = top + 120;
+    }
+    this.#view.top = top;
+    this.#view.bottom = bottom;
+  }
+
+  // ── Input ──
+
+  #bind() {
+    const canvas = this.#canvas;
+    canvas.addEventListener('pointerdown', e => this.#onPointerDown(e));
+    canvas.addEventListener('pointermove', e => this.#onPointerMove(e));
+    canvas.addEventListener('pointerup', e => this.#onPointerUp(e));
+    canvas.addEventListener('pointercancel', () => this.#onPointerCancel());
+    canvas.addEventListener('pointerleave', () => {
+      this.#pointer.over = false;
+      this.#setHover('');
+    });
+    canvas.addEventListener('wheel', e => this.#onWheel(e), { passive: false });
+    // Taps act on click, so the viewer's "first tap only wakes the controls" rule in the
+    // slideshow (a capture-phase click guard) also covers the row
+    canvas.addEventListener('click', e => this.#onClick(e));
+    new ResizeObserver(() => {
+      this.#resizePending = true;
+      this.#start();
+    }).observe(this.#lightbox);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.#start();
+    });
+  }
+
+  #local(e) {
+    const rect = this.#canvas.getBoundingClientRect();
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  }
+
+  #skipIntro() {
+    if (this.#intro.running) this.#intro.t = 1;
+  }
+
+  #onPointerDown(e) {
+    if (e.button !== undefined && e.button > 0) return;
+    this.#skipIntro();
+    const [x, y] = this.#local(e);
+    const p = this.#pointer;
+    p.down = true;
+    p.id = e.pointerId;
+    p.touch = e.pointerType === 'touch';
+    p.startX = x;
+    p.startY = y;
+    p.x = x;
+    p.y = y;
+    p.startPos = this.#pos;
+    p.dragging = false;
+    p.dragged = false;
+    p.samples = [{ x, t: e.timeStamp }];
+    if (Math.abs(this.#vel) > 40) {
+      this.#goal = this.#pos;
+      this.#vel = 0;
+    }
+    this.#dirty = true;
+    this.#start();
+  }
+
+  #onPointerMove(e) {
+    const [x, y] = this.#local(e);
+    const p = this.#pointer;
+    p.x = x;
+    p.y = y;
+    p.over = true;
+    if (p.down && e.pointerId === p.id) {
+      const dx = x - p.startX;
+      const dy = y - p.startY;
+      const slop = p.touch ? 10 : 5;
+      if (!p.dragging) {
+        // A mostly vertical touch drag belongs to the viewer (swipe down closes it)
+        if (p.touch && Math.abs(dy) > slop && Math.abs(dy) > Math.abs(dx)) {
+          p.down = false;
+          return;
+        }
+        if (Math.abs(dx) > slop) {
+          p.dragging = true;
+          p.dragged = true;
+          p.startX = x;
+          p.startPos = this.#pos;
+          this.closeFocus();
+          try {
+            this.#canvas.setPointerCapture(e.pointerId);
+          } catch {
+            // capture is only a nicety: the drag still follows inside the canvas
+          }
+          this.#canvas.setAttribute('data-dragging', '');
+        }
+      }
+      if (p.dragging) {
+        this.#pos = p.startPos - (x - p.startX);
+        this.#goal = this.#pos;
+        this.#vel = 0;
+        p.samples.push({ x, t: e.timeStamp });
+        while (p.samples.length > 2 && e.timeStamp - p.samples[0].t > 100) p.samples.shift();
+      }
+    }
+    this.#updateHover();
+    this.#dirty = true;
+    this.#start();
+  }
+
+  #onPointerUp(e) {
+    const p = this.#pointer;
+    if (!p.down || e.pointerId !== p.id) return;
+    p.down = false;
+    this.#canvas.removeAttribute('data-dragging');
+    if (!p.dragging || !this.#layout) return;
+    p.dragging = false;
+    const m = this.#layout;
+    const first = p.samples[0];
+    const last = p.samples[p.samples.length - 1];
+    let velocity = 0;
+    if (first && last && last.t > first.t && e.timeStamp - last.t < 70) {
+      velocity = -((last.x - first.x) / (last.t - first.t)) * 1000;
+    }
+    this.#vel = this.#reduced ? 0 : velocity;
+    const landing = this.#snapPoint(m, this.#pos + velocity * 0.32);
+    this.#goal = landing;
+    if (Math.abs(velocity) > 400 && Math.abs(landing - this.#pos) < 1) this.#step(m, velocity > 0 ? 1 : -1);
+    this.#mode = 'spring';
+    this.#start();
+  }
+
+  #onPointerCancel() {
+    const p = this.#pointer;
+    p.down = false;
+    p.dragging = false;
+    this.#canvas.removeAttribute('data-dragging');
+    if (this.#layout) this.#goal = this.#snapPoint(this.#layout, this.#pos);
+    this.#mode = 'spring';
+    this.#start();
+  }
+
+  #onClick(e) {
+    if (this.#pointer.dragged) {
+      this.#pointer.dragged = false;
+      return;
+    }
+    if (!this.isShowing || !this.#intro.done && !this.#intro.running) return;
+    e.stopPropagation();
+    if (this.closeFocus()) return;
+    const [x, y] = this.#local(e);
+    const hit = this.#hit(x, y);
+    if (!hit) {
+      this.onBackdrop?.();
+      return;
+    }
+    if (hit.index === this.#activeIndex && Math.abs(this.#goal - this.#pos) < 2) {
+      this.#openFocus(hit.index);
+    } else if (this.#layout) {
+      // A side print comes to the centre; a second click enlarges it
+      const rel = (hit.x0 + hit.x1) / 2 - this.#view.width / 2;
+      this.#goal = this.#snapPoint(this.#layout, this.#pos + rel);
+      this.#mode = 'spring';
+      this.#start();
+    }
+  }
+
+  #onWheel(e) {
+    if (e.ctrlKey || !this.isShowing) return;
+    let dx = e.deltaX;
+    let dy = e.deltaY;
+    if (e.shiftKey && Math.abs(dx) < Math.abs(dy)) {
+      dx = dy;
+      dy = 0;
+    }
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.#view.height : 1;
+    const horizontal = Math.abs(dx) > Math.abs(dy);
+    e.preventDefault();
+    this.#skipIntro();
+    if (this.closeFocus()) return;
+    const delta = Math.max(-120, Math.min(120, (horizontal ? dx : dy) * unit));
+    this.#goal += delta * 1.25;
+    this.#mode = 'wheel';
+    this.#wheelAt = e.timeStamp;
+    this.#start();
+  }
+
+  #hit(x, y) {
+    for (let i = this.#instances.length - 1; i >= 0; i--) {
+      const inst = this.#instances[i];
+      if (x >= inst.x0 && x <= inst.x1 && y >= inst.y0 && y <= inst.y1) return inst;
+    }
+    return null;
+  }
+
+  #updateHover() {
+    const p = this.#pointer;
+    let next = '';
+    if (p.over && !p.touch && !p.dragging && this.#intro.done) {
+      const hit = this.#hit(p.x, p.y);
+      if (this.#focus.target > 0) next = 'close';
+      else if (hit) next = hit.index === this.#activeIndex ? 'open' : 'side';
+    }
+    this.#setHover(next);
+  }
+
+  #setHover(value) {
+    if (value === this.#hover || !this.#canvas) return;
+    this.#hover = value;
+    if (value) this.#canvas.setAttribute('data-hover', value);
+    else this.#canvas.removeAttribute('data-hover');
+  }
+
+  // ── Frame loop (ported) ──
+
+  #start() {
+    if (this.#raf || !this.#gl || !this.#open || this.#hidden || document.hidden) return;
+    this.#last = 0;
+    this.#raf = requestAnimationFrame(t => this.#frame(t));
+  }
+
+  #introEffects() {
+    const intro = this.#intro;
+    const e = { sceneAlpha: 1, strength: 1, card: null };
+    if (!intro.done && !intro.running) {
+      e.sceneAlpha = 0;
+      e.strength = 0;
+      return e;
+    }
+    const t = intro.running ? intro.t : 1;
+    if (t >= 1) return e;
+    if (this.#reduced) {
+      e.sceneAlpha = LightboxCarousel.#easeOut(t);
+      e.strength = LightboxCarousel.#easeOut(t);
+      return e;
+    }
+    // "bloom": prints fade in from the centre outwards while the bend forms
+    const width = this.#view.width;
+    e.strength = LightboxCarousel.#easeInOut((t - 0.2) / 0.8);
+    e.card = rel => {
+      const delay = Math.min(Math.abs(rel) / (width * 0.6), 1) * 0.25;
+      const local = LightboxCarousel.#easeOut((t - delay) / 0.55);
+      return { alpha: local, scale: 0.92 + 0.08 * local };
+    };
+    return e;
+  }
+
+  #frame(now) {
+    this.#raf = 0;
+    if (!this.#gl || !this.#open || this.#hidden || document.hidden) return;
+    if (this.#resizePending) {
+      this.#resizePending = false;
+      this.#applyResize();
+    }
+    const n = this.#slots.length;
+    if (!n) return;
+    const o = LightboxCarousel.#OPTIONS;
+    const reduced = this.#reduced;
+    const dt = this.#last ? Math.min(0.05, Math.max(0.001, (now - this.#last) / 1000)) : 1 / 60;
+    this.#last = now;
+    const m = this.#metrics();
+    let animating = false;
+
+    if (this.#resnap) {
+      const i = this.#pendingIndex >= 0 && this.#pendingIndex < n ? this.#pendingIndex : this.#nearest(m, this.#goal);
+      this.#goal = m.centers[i];
+      this.#pos = this.#goal;
+      this.#vel = 0;
+      this.#resnap = false;
+      this.#pendingIndex = -1;
+      this.#lastPos = this.#pos;
+    } else if (this.#layout && this.#layout.loop !== m.loop) {
+      // A photo finished loading and changed its width: keep the same print centred
+      this.#pos = this.#remap(this.#layout, m, this.#pos);
+      this.#goal = this.#remap(this.#layout, m, this.#goal);
+      this.#pointer.startPos = this.#pos + (this.#pointer.x - this.#pointer.startX);
+      this.#lastPos = this.#pos;
+      animating = true;
+    }
+    this.#layout = m;
+
+    // The intro starts once the centred print and its neighbours are in, or after a moment
+    const intro = this.#intro;
+    if (!intro.running && !intro.done) {
+      if (!intro.since) intro.since = now;
+      const c = this.#nearest(m, this.#goal);
+      const near = [c, (c + 1) % n, (c + n - 1) % n].every(i => this.#slots[i].loaded || this.#slots[i].failed);
+      if (near || now - intro.since > 700) intro.running = true;
+      animating = true;
+    }
+    if (intro.running) {
+      intro.t = Math.min(1, intro.t + dt / (reduced ? 0.35 : o.introSeconds));
+      if (intro.t >= 1) {
+        intro.running = false;
+        intro.done = true;
+      }
+      animating = true;
+    }
+
+    if (this.#mode === 'wheel' && now - this.#wheelAt > 150) {
+      this.#goal = this.#snapPoint(m, this.#goal);
+      this.#mode = 'spring';
+    }
+    if (!this.#pointer.dragging) {
+      if (reduced) {
+        this.#pos = this.#goal;
+        this.#vel = 0;
+      } else {
+        const stiffness = this.#mode === 'wheel' ? 80 : 55;
+        const damping = 2 * Math.sqrt(stiffness);
+        const steps = Math.ceil(dt / (1 / 240));
+        const h = dt / steps;
+        for (let i = 0; i < steps; i++) {
+          this.#vel += (stiffness * (this.#goal - this.#pos) - damping * this.#vel) * h;
+          this.#pos += this.#vel * h;
+        }
+        if (Math.abs(this.#goal - this.#pos) < 0.05 && Math.abs(this.#vel) < 0.5) {
+          this.#pos = this.#goal;
+          this.#vel = 0;
+        } else {
+          animating = true;
+        }
+      }
+    } else {
+      animating = true;
+    }
+
+    if (Math.abs(this.#pos) > m.loop * 8) {
+      const shift = Math.round(this.#pos / m.loop) * m.loop;
+      this.#pos -= shift;
+      this.#goal -= shift;
+      this.#pointer.startPos -= shift;
+      this.#lastPos -= shift;
+    }
+
+    this.#activeIndex = this.#nearest(m, this.#pos);
+    if (this.#settled && intro.done) {
+      if (this.#activeIndex !== this.#reported) {
+        this.#reported = this.#activeIndex;
+        this.onSettle?.(this.#activeIndex);
+      }
+      this.#sharpen(this.#activeIndex);
+    }
+
+    // Prints shrink a little while the row travels fast
+    const travel = Math.abs(this.#pos - this.#lastPos) / dt;
+    this.#lastPos = this.#pos;
+    const energyTarget = reduced ? 0 : Math.min(travel / 2600, 1);
+    this.#energy += (energyTarget - this.#energy)
+      * (1 - Math.exp(-dt / (energyTarget > this.#energy ? 0.07 : 0.35)));
+    if (this.#energy > 0.001) animating = true;
+
+    const focus = this.#focus;
+    if (!reduced) {
+      const k = 64;
+      focus.v += (k * (focus.target - focus.t) - 2 * Math.sqrt(k) * focus.v) * dt;
+      focus.t += focus.v * dt;
+    }
+    if (Math.abs(focus.target - focus.t) < 0.0005 && Math.abs(focus.v) < 0.001) {
+      focus.t = focus.target;
+      focus.v = 0;
+    } else {
+      animating = true;
+    }
+    const focusAmount = LightboxCarousel.#clamp01(focus.t);
+    const focusEase = LightboxCarousel.#easeInOut(focusAmount);
+    const width = this.#view.width;
+    const focusW = focus.index >= 0 && focus.index < n ? m.widths[focus.index] : m.cardH;
+    // Enlarged, a print fills the band or 92% of the width, whichever comes first. The
+    // component stops at 1.3x; on phones, where the shared height keeps portraits small,
+    // this lets a tapped print fill the screen.
+    const focusScale = Math.max(1, Math.min((m.bandH * 0.98) / m.cardH, (width * 0.92) / focusW));
+
+    // The glass is sized from the width, as in the component, but never so small that its
+    // bending edge reaches the centred print: on narrow screens it grows, so the photo being
+    // viewed stays flat and only the neighbours bend. Its flat middle is about 0.29 of its size.
+    const centred = m.widths[this.#activeIndex] || m.cardH;
+    const lensTarget = Math.max(width, (centred / 2 + 16) / 0.29);
+    if (!this.#lensBase || reduced) this.#lensBase = lensTarget;
+    else this.#lensBase += (lensTarget - this.#lensBase) * (1 - Math.exp(-dt / 0.25));
+    if (Math.abs(lensTarget - this.#lensBase) > 0.5) animating = true;
+
+    for (const slot of this.#slots) {
+      if (slot.loaded && slot.ready < 1) {
+        slot.ready = reduced ? 1 : Math.min(1, slot.ready + dt / 0.45);
+        animating = true;
+      }
+    }
+
+    if (this.#dirty || animating) {
+      this.#dirty = false;
+      this.#draw(m, focusAmount, focusEase, focusScale);
+    }
+    this.#updateHover();
+
+    if (animating || this.#pointer.down) this.#raf = requestAnimationFrame(t => this.#frame(t));
+  }
+
+  #draw(m, focusAmount, focusEase, focusScale) {
+    const gl = this.#gl;
+    const o = LightboxCarousel.#OPTIONS;
+    const { width, height, dpr } = this.#view;
+    const effects = this.#introEffects();
+    const homeX = width / 2;
+    const n = this.#slots.length;
+    const shrink = 1 - LightboxCarousel.#clamp01(o.squeeze) * this.#energy;
+    const draws = [];
+    for (let i = 0; i < n; i++) {
+      const w = m.widths[i];
+      const baseRel = LightboxCarousel.#wrap(m.centers[i] - this.#pos, m.loop);
+      for (let k = -3; k <= 3; k++) {
+        const rel = baseRel + k * m.loop;
+        if (Math.abs(rel) - w / 2 > width + 40) continue;
+        const fx = effects.card ? effects.card(rel) : null;
+        const x = homeX + rel;
+        let scale = shrink * (fx ? fx.scale : 1);
+        let alpha = fx ? fx.alpha : 1;
+        let px = x;
+        if (focusAmount > 0) {
+          if (i === this.#focus.index && Math.abs(rel) < w) {
+            scale *= 1 + (focusScale - 1) * focusEase;
+          } else {
+            const order = Math.min(Math.abs(rel) / width, 1) * 0.25;
+            const part = LightboxCarousel.#easeInOut(focusAmount * 1.25 - order);
+            px += Math.sign(rel) * part * width * 0.7;
+            alpha *= 1 - part;
+          }
+        }
+        const cw = w * scale;
+        if (alpha <= 0.001 || px + cw / 2 < -40 || px - cw / 2 > width + 40) continue;
+        draws.push({ i, rel, x: px, y: m.homeY, cw, ch: m.cardH * scale, scale, alpha });
+      }
+    }
+    draws.sort((a, b) => Math.abs(b.rel) - Math.abs(a.rel));
+
+    // Prints into the off-screen scene
+    const t = this.#target;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+    gl.viewport(0, 0, t.width, t.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    const cu = this.#card.uniforms;
+    gl.useProgram(this.#card.program);
+    gl.bindVertexArray(this.#quad);
+    gl.uniform2f(cu.uResolution, width, height);
+    gl.uniform1f(cu.uDpr, dpr);
+    gl.uniform1f(cu.uRadius, o.radius);
+    gl.uniform3fv(cu.uMatColor, LightboxCarousel.#MAT_COLOR);
+    gl.uniform1i(cu.tMap, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    this.#instances = [];
+    for (const d of draws) {
+      const slot = this.#slots[d.i];
+      gl.bindTexture(gl.TEXTURE_2D, slot.texture);
+      gl.uniform4f(cu.uRect, d.x, d.y, d.cw + 2, d.ch + 2);
+      gl.uniform2f(cu.uSize, d.cw, d.ch);
+      gl.uniform3f(cu.uMat, m.mat * d.scale, m.mat * d.scale, m.matBottom * d.scale);
+      gl.uniform1f(cu.uAlpha, d.alpha);
+      gl.uniform1f(cu.uReady, slot.ready);
+      gl.uniform3fv(cu.uPlaceholder, slot.color);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      this.#instances.push({
+        index: d.i, x0: d.x - d.cw / 2, x1: d.x + d.cw / 2, y0: d.y - d.ch / 2, y1: d.y + d.ch / 2,
+      });
+    }
+    gl.disable(gl.BLEND);
+    gl.bindTexture(gl.TEXTURE_2D, t.texture);
+    gl.generateMipmap(gl.TEXTURE_2D);
+
+    // The invisible glass bends the scene onto the canvas
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.#canvas.width, this.#canvas.height);
+    const lu = this.#lens.uniforms;
+    gl.useProgram(this.#lens.program);
+    gl.bindVertexArray(this.#triangle);
+    gl.uniform1i(lu.tScene, 0);
+    gl.uniform2f(lu.uResolution, width, height);
+    gl.uniform1f(lu.uDpr, dpr);
+    gl.uniform2f(lu.uCenter, homeX, m.homeY);
+    const base = this.#lensBase || width;
+    const halfW = Math.max((o.lensWidth * base) / 2, 1);
+    const halfH = Math.max((o.lensHeight * base) / 2, 1);
+    gl.uniform2f(lu.uHalf, halfW, halfH);
+    gl.uniform1f(lu.uAngle, (o.tilt * Math.PI) / 180);
+    gl.uniform1f(lu.uExponent, 2 + Math.pow(1 - LightboxCarousel.#clamp01(o.roundness), 1.5) * 10);
+    const inner = Math.max(4, o.reach * (halfW + halfH) * 0.5);
+    gl.uniform1f(lu.uInner, inner);
+    gl.uniform1f(lu.uOuter, inner * 1.6);
+    gl.uniform1f(lu.uFlow, o.bend * (halfW + halfH) * 0.45);
+    gl.uniform1f(lu.uDispersion, o.dispersion * 0.12);
+    gl.uniform1f(lu.uStrength, effects.strength * (1 - focusEase));
+    gl.uniform1f(lu.uSceneAlpha, effects.sceneAlpha);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+  }
+
+  #teardown() {
+    cancelAnimationFrame(this.#raf);
+    this.#raf = 0;
+    this.#gl = null;
+    this.#open = false;
+    this.#slots = [];
+    this.#canvas?.remove();
+    this.#lightbox?.classList.remove('has-carousel', 'is-zoom-view');
+  }
+}
+
 /* ── 9. APPLICATION BOOTSTRAP ── */
 
 const repository            = new PortfolioRepository(photoData, CATS);
@@ -4102,6 +5316,7 @@ const specularEdge          = new SpecularEdgeController(transitionCoordinator);
 const jellyTabs             = new JellyTabsController(transitionCoordinator);
 const spotlightCards        = new SpotlightCardController(transitionCoordinator);
 const lightboxGrain         = new LightboxGrainController(transitionCoordinator);
+lightboxController.attachCarousel(new LightboxCarousel(document.getElementById('lightbox'), transitionCoordinator));
 
 // Keep the footer copyright year current without a yearly edit
 const footerYearEl = document.getElementById('ft-year');
