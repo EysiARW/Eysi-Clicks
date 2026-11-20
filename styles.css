@@ -129,8 +129,10 @@ html[data-theme="light"] {
   /* Spotlight on the Coverage cards: a white pool brightens the cream card, bronze edge */
   --spotlight-fill:      rgba(255, 255, 255, 0.85);
   --spotlight-edge:      rgba(130, 106, 78, 0.6);
-  /* Film grain behind the page: on cream only its dark (warm ink) specks show */
-  --film-grain-opacity:  0.1;
+  /* Film grain behind the page (Noise "Film" preset, overlay at full strength) */
+  --film-grain-opacity:  1;
+  /* Overlay grows as the fill moves away from white, so the footer's --bg2 needs less */
+  --film-grain-footer:   0.42;
   --header-height:    5rem;
   --shutter-ease:     cubic-bezier(0.22, 1, 0.36, 1);
   --motion-ease-cinematic: cubic-bezier(0.22, 1, 0.36, 1);
@@ -215,8 +217,7 @@ html[data-theme="dark"] {
   --specular-paper-base: #826a4e;
   --spotlight-fill:      rgba(243, 231, 211, 0.1);
   --spotlight-edge:      rgba(197, 173, 141, 0.6);
-  /* On near-black only the light (champagne) specks show */
-  --film-grain-opacity:  0.08;
+  --film-grain-footer:   0.55;
 }
 
 .sr-only {
@@ -296,7 +297,7 @@ main {
    .grain is a still SVG grain. FilmGrainController (section 8i of app.js) turns it into
    living film grain and adds the same layer to the surfaces that cover it: the nav, the
    pinned category bar and the footer. Each .film-grain-layer is one tile larger than its
-   box and jumps to a new offset 24 times a second, so only its transform changes. */
+   box and jumps to a new offset 30 times a second, so only its transform changes. */
 .grain {
   position: fixed;
   inset: 0;
@@ -312,9 +313,12 @@ html[data-theme="dark"] .grain {
   opacity: 0.018;
 }
 
+/* Each box that holds a layer is a group of its own (strict containment, or z-index) and
+   is filled with the colour it sits on, so the overlay always mixes with a solid page
+   colour: the same grain on the page, the nav, the pinned bar and the footer */
 html.has-film-grain .grain {
   opacity: 1;
-  background: none;
+  background: var(--bg);
 }
 
 .film-grain {
@@ -323,6 +327,15 @@ html.has-film-grain .grain {
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
+  background: var(--bg);
+}
+
+footer > .film-grain {
+  background: var(--bg2);
+}
+
+footer > .film-grain > .film-grain-layer {
+  opacity: calc(var(--film-grain-opacity) * var(--film-grain-footer));
 }
 
 .film-grain-layer {
@@ -332,16 +345,17 @@ html.has-film-grain .grain {
   right: 0;
   bottom: 0;
   opacity: var(--film-grain-opacity);
+  mix-blend-mode: overlay;
   background-image: var(--film-grain-tile);
   background-size: 256px 256px;
   image-rendering: pixelated;
   will-change: transform;
-  animation: filmGrainShift 0.667s steps(1, end) infinite;
+  animation: filmGrainShift 0.533s steps(1, end) infinite;
 }
 
 /* The nav's own fill fades out downwards, so its grain fades with it and the page grain
    shows through the rest. Its backdrop blur is dropped while the grain lives: it smeared the
-   page grain into a darker, flat band and re-blurred it 24 times a second. */
+   page grain into a darker, flat band and re-blurred it 30 times a second. */
 html.has-film-grain nav {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;

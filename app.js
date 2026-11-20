@@ -4907,24 +4907,21 @@ void main() {
 /* ── 8i. FILM GRAIN (a fine, living grain behind the whole page) ── */
 
 // A vanilla port of React Bits' Noise (MIT + Commons Clause, notice in
-// vendor/reactbits/LICENSE.md). The component lays a grey grain tile over its parent with
-// mix-blend-mode and moves it by rewriting background-position. Here the grain sits behind
-// the page, never over a photograph, and a blend mode over the whole page would repaint on
-// every scroll, so the tile is painted with its own transparency instead: pixels above
-// mid-grey become champagne specks, pixels below become warm ink specks, and mid-grey is
-// clear, which is what overlay does. The CSS keyframe filmGrainShift moves each layer by
-// transform. Hosts: the fixed .grain behind the page, plus the nav, the pinned category
-// bar and the footer, whose solid fills would otherwise hide it. The photo viewer pauses
-// it (it has its own grain). Reduced motion: still grain, like the component's fps 0.
-// Not ported: dust, scratches, scanlines, flicker, coloured grain.
+// vendor/reactbits/LICENSE.md), "Film" preset: grey grain, contrast 0.6, size 1, overlay
+// blend; the owner set opacity 0.10 and 30 fps. The component moves its tile by rewriting
+// background-position; here the CSS keyframe filmGrainShift moves each layer by transform,
+// so nothing repaints. The grain sits behind the page, never over a photograph, so overlay
+// mixes it only with the page fill. Hosts: the fixed .grain behind the page, plus the nav,
+// the pinned category bar and the footer, whose solid fills would otherwise hide it. The
+// photo viewer pauses it (it has its own grain). Reduced motion: still grain, like the
+// component's fps 0. Not ported: dust, scratches, scanlines, flicker, coloured grain (all
+// off in the Film preset).
 class FilmGrainController {
-  // The component's defaults (2026-11-20); strength per theme is --film-grain-opacity
+  // The Film preset (2026-11-20); opacity is --film-grain-opacity, fps is filmGrainShift
   static #OPTIONS = Object.freeze({
     tile: 256,        // px; filmGrainShift in styles.css moves within one tile
     contrast: 0.6,    // 0 soft and fine, 1 harsh
     seed: 1013904223,
-    paper: [255, 248, 236],
-    ink: [40, 30, 20],
   });
 
   static #HOSTS = ['.grain', '#navbar', '.gallery-controls', '#footer'];
@@ -4959,9 +4956,9 @@ class FilmGrainController {
     host.prepend(frame);
   }
 
-  // The component's generator and triangular sample, written out as transparent specks
+  // The component's paintTile: its generator and triangular sample, as an opaque grey tile
   static #paintTile() {
-    const { tile, contrast, seed, paper, ink } = FilmGrainController.#OPTIONS;
+    const { tile, contrast, seed } = FilmGrainController.#OPTIONS;
     const canvas = document.createElement('canvas');
     canvas.width = tile;
     canvas.height = tile;
@@ -4978,12 +4975,11 @@ class FilmGrainController {
     };
     const range = 0.5 + contrast * 1.1;
     for (let i = 0; i < data.length; i += 4) {
-      const value = Math.min(1, Math.max(0, 0.5 + (random() + random() - 1) * range));
-      const tone = value >= 0.5 ? paper : ink;
-      data[i] = tone[0];
-      data[i + 1] = tone[1];
-      data[i + 2] = tone[2];
-      data[i + 3] = Math.round(Math.abs(value - 0.5) * 2 * 255);
+      const value = Math.min(1, Math.max(0, 0.5 + (random() + random() - 1) * range)) * 255;
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
+      data[i + 3] = 255;
     }
     ctx.putImageData(image, 0, 0);
     return canvas;
