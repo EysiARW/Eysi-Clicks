@@ -7,7 +7,7 @@
      2. ViewTransitionCoordinator (Same-Document View Transitions API)
      3. ThemeManager (Archival Daylight / Darkroom Obsidian)
      4. CursorLoupeController (Fine-Pointer Optical Reticle)
-     5. LightboxController (Darkroom Loupe, Museum Mat, Slideshow)
+     5. LightboxController (Darkroom Loupe, Museum Mat)
      6. GalleryPresenter (Tabs, Orientation, Contact Sheet Proofs)
      7. TelemetryHudController (Scrollspy, Focal Continuum, Local Clock)
      8. Application Bootstrap
@@ -407,8 +407,6 @@ class CursorLoupeController {
 const LightboxState = Object.freeze({
   CLOSED: 0,
   VIEWING: 1,
-  ZOOMED: 2,
-  SLIDESHOW: 3,
 });
 
 class LightboxController {
@@ -419,27 +417,12 @@ class LightboxController {
   #counterEl;
   #catBadgeEl;
   #filmstripEl;
-  #slideshowBarEl;
-  #playBtn;
-  #playLabel;
-  #zoomBtn;
   #transitionCoordinator;
   #cursorLoupe;
 
   #state = LightboxState.CLOSED;
   #images = [];
   #currentIndex = 0;
-  #isZoomed = false;
-  #panX = 0;
-  #panY = 0;
-  #panBounds = { maxX: 180, maxY: 180 };
-  #isPanning = false;
-  #dragStartX = 0;
-  #dragStartY = 0;
-  #startPanX = 0;
-  #startPanY = 0;
-  #hasDragged = false;
-  #slideshowInterval = null;
   #lastFocusedElement = null;
   #activeSourceFigure = null;
   #preloadCache = new Map();
@@ -447,14 +430,6 @@ class LightboxController {
   // GSAP is optional: without it (or with reduced motion) swipes and pans keep their plain behaviour
   #gsap = (typeof window !== 'undefined' && window.gsap) || null;
   #pictureEl = null;
-  #panVelX = 0;
-  #panVelY = 0;
-  #panLastX = 0;
-  #panLastY = 0;
-  #panLastT = 0;
-  #panGlide = null;
-  #kenBurnsFlip = false;
-  #chromeTimer = null;
   #carousel = null;
 
   constructor(transitionCoordinator, cursorLoupe) {
@@ -467,10 +442,6 @@ class LightboxController {
     this.#counterEl      = document.getElementById('lightbox-counter');
     this.#catBadgeEl     = document.getElementById('lightbox-cat-badge');
     this.#filmstripEl    = document.getElementById('lightbox-filmstrip');
-    this.#slideshowBarEl = document.getElementById('lightbox-slideshow-bar');
-    this.#playBtn        = document.getElementById('lb-play-btn');
-    this.#playLabel      = document.getElementById('lb-play-label');
-    this.#zoomBtn        = document.getElementById('lb-zoom-btn');
 
     this.#bindEvents();
   }
@@ -501,7 +472,7 @@ class LightboxController {
   }
 
   // The bending row of prints (LightboxCarousel) becomes the view when WebGL2 is there;
-  // this controller keeps ownership of the current photo, caption, hash, keys and slideshow.
+  // this controller keeps ownership of the current photo, caption, hash and keys.
   attachCarousel(carousel) {
     if (!carousel?.active) return;
     this.#carousel = carousel;
@@ -509,7 +480,6 @@ class LightboxController {
     carousel.onBackdrop = () => this.close();
     // A #photo- link opens the viewer while the page starts, before the row exists
     if (this.isOpen && this.#images.length) {
-      this.#resetZoom();
       carousel.open(this.#images, this.#currentIndex);
     }
   }
@@ -520,17 +490,8 @@ class LightboxController {
 
   #selectFromCarousel(index) {
     if (!this.isOpen || index === this.#currentIndex || index < 0 || index >= this.#images.length) return;
-    this.#restartSlideshowTimer();
     this.#currentIndex = index;
-    this.#nextKenBurns();
     this.#updateView();
-  }
-
-  // Zoom shows the single matted print (with pan) in place of the row
-  #setZoomView(on) {
-    if (!this.#carousel) return;
-    this.#lightboxEl?.classList.toggle('is-zoom-view', on);
-    this.#carousel.setHidden(on);
   }
 
   open(images, index, sourceFigure = null) {
@@ -641,11 +602,8 @@ class LightboxController {
     if (!this.#lightboxEl || !this.isOpen) return;
     this.#flightToken++;
     this.#settleSwipe();
-    if (!this.#isZoomed && !this.#carouselView) this.#flyOut();
+    if (!this.#carouselView) this.#flyOut();
     this.#lightboxEl.classList.remove('flip-open', 'is-flying');
-    this.stopSlideshow();
-    this.#setKenBurns('');
-    this.#resetZoom();
     this.#state = LightboxState.CLOSED;
 
     // Clear photo URL hash cleanly
@@ -672,15 +630,8 @@ class LightboxController {
   navigate(dir, { animate = true } = {}) {
     if (!this.#images.length) return;
     if (animate) this.#settleSwipe();
-    if (this.#state === LightboxState.ZOOMED || this.#isZoomed) {
-      this.#resetZoom();
-      this.#state = LightboxState.VIEWING;
-    } else if (this.#state === LightboxState.SLIDESHOW || this.#slideshowInterval) {
-      this.#restartSlideshowTimer();
-    }
     this.#currentIndex = (this.#currentIndex + dir + this.#images.length) % this.#images.length;
     if (animate) this.#triggerFrameCrossfade(dir >= 0 ? 'next' : 'prev');
-    this.#nextKenBurns();
     this.#updateView();
   }
 
@@ -688,11 +639,10 @@ class LightboxController {
   // The print slides inside its mat with the finger. Past a short distance or a quick flick
   // it leaves and the next one arrives from the other side; otherwise it settles back.
   #canFollowSwipe() {
-    if (!this.#gsap || this.#isZoomed || this.#images.length < 2
+    if (!this.#gsap || this.#images.length < 2
       || this.#transitionCoordinator.prefersReducedMotion) return false;
     this.#pictureEl ??= this.#lightboxEl?.querySelector('.lightbox-picture') || null;
-    // The slideshow's push-in animates this same element
-    return Boolean(this.#pictureEl) && !this.#pictureEl.getAttribute('data-kb');
+    return Boolean(this.#pictureEl);
   }
 
   #settleSwipe() {
@@ -724,63 +674,6 @@ class LightboxController {
     });
   }
 
-  // ── Zoom pan momentum (GSAP) ──
-  #applyPan() {
-    if (this.#imgEl) {
-      this.#imgEl.style.transform = `scale(1.85) translate3d(${this.#panX / 1.85}px, ${this.#panY / 1.85}px, 0)`;
-    }
-  }
-
-  #beginPanTracking(x, y) {
-    this.#panGlide?.kill();
-    this.#panGlide = null;
-    this.#panVelX = 0;
-    this.#panVelY = 0;
-    this.#panLastX = x;
-    this.#panLastY = y;
-    this.#panLastT = Date.now();
-  }
-
-  #trackPan(x, y) {
-    const now = Date.now();
-    const dt = now - this.#panLastT;
-    if (dt <= 0) return;
-    // Smoothed px/ms, so one jittery sample does not decide the throw
-    this.#panVelX = 0.7 * ((x - this.#panLastX) / dt) + 0.3 * this.#panVelX;
-    this.#panVelY = 0.7 * ((y - this.#panLastY) / dt) + 0.3 * this.#panVelY;
-    this.#panLastX = x;
-    this.#panLastY = y;
-    this.#panLastT = now;
-  }
-
-  // Returns true when the photo keeps gliding (the caller then leaves `is-panning` on,
-  // because that class switches off the CSS transition that would fight the tween)
-  #glidePan() {
-    const stale = Date.now() - this.#panLastT > 80;
-    const speed = Math.hypot(this.#panVelX, this.#panVelY);
-    if (!this.#gsap || !this.#isZoomed || stale || speed < 0.15
-      || this.#transitionCoordinator.prefersReducedMotion) return false;
-    const { maxX, maxY } = this.#getPanBounds();
-    const clamp = (v, max) => Math.max(-max, Math.min(max, v));
-    const proxy = { x: this.#panX, y: this.#panY };
-    this.#panGlide = this.#gsap.to(proxy, {
-      x: clamp(this.#panX + this.#panVelX * 240, maxX),
-      y: clamp(this.#panY + this.#panVelY * 240, maxY),
-      duration: 0.7,
-      ease: 'power3.out',
-      onUpdate: () => {
-        this.#panX = proxy.x;
-        this.#panY = proxy.y;
-        this.#applyPan();
-      },
-      onComplete: () => {
-        this.#panGlide = null;
-        this.#imgEl?.classList.remove('is-panning');
-      }
-    });
-    return true;
-  }
-
   #triggerFrameCrossfade(navDir = 'next') {
     if (this.#imgEl && !this.#transitionCoordinator.prefersReducedMotion) {
       this.#imgEl.setAttribute('data-nav-dir', navDir);
@@ -788,147 +681,6 @@ class LightboxController {
       void this.#imgEl.offsetWidth;
       this.#imgEl.classList.add('frame-crossfade');
     }
-  }
-
-  toggleZoom() {
-    if (!this.#imgEl) return;
-    this.#setKenBurns('');
-    if (this.#state === LightboxState.SLIDESHOW || this.#slideshowInterval) {
-      this.stopSlideshow();
-      this.#isZoomed = true;
-      this.#state = LightboxState.ZOOMED;
-      this.#setZoomView(true);
-      this.#panBounds = this.#measurePanBounds();
-      this.#imgEl.classList.add('zoomed');
-      if (this.#zoomBtn) {
-        this.#zoomBtn.setAttribute('aria-pressed', 'true');
-      }
-    } else if (this.#state === LightboxState.ZOOMED || this.#isZoomed) {
-      this.#resetZoom();
-      this.#state = LightboxState.VIEWING;
-    } else {
-      this.#isZoomed = true;
-      this.#state = LightboxState.ZOOMED;
-      this.#setZoomView(true);
-      this.#panBounds = this.#measurePanBounds();
-      this.#imgEl.classList.add('zoomed');
-      if (this.#zoomBtn) {
-        this.#zoomBtn.setAttribute('aria-pressed', 'true');
-      }
-    }
-  }
-
-  toggleSlideshow() {
-    if (this.#state === LightboxState.SLIDESHOW || this.#slideshowInterval) {
-      this.stopSlideshow();
-    } else {
-      this.startSlideshow();
-    }
-  }
-
-  startSlideshow() {
-    if (this.#slideshowInterval || this.#images.length <= 1) return;
-    this.#resetZoom();
-    this.#state = LightboxState.SLIDESHOW;
-    if (this.#playBtn) this.#playBtn.setAttribute('aria-pressed', 'true');
-    if (this.#playLabel) this.#playLabel.textContent = 'Pause';
-    if (this.#slideshowBarEl) this.#slideshowBarEl.classList.add('playing');
-    this.#setCinema(true);
-
-    this.#slideshowInterval = window.setInterval(() => {
-      this.navigate(1);
-    }, 3500);
-  }
-
-  // Cinema mode: while the slideshow plays, the controls fade out and each frame gets a slow
-  // push-in that alternates drift direction. Pointer movement or keyboard focus wakes the controls.
-  #setCinema(on) {
-    if (!this.#lightboxEl) return;
-    this.#lightboxEl.classList.toggle('is-cinema', on);
-    this.#lightboxEl.classList.remove('chrome-awake');
-    clearTimeout(this.#chromeTimer);
-    // Starting sets the first push-in; pausing leaves the current frame where it is (no snap
-    // back) until the next navigation, zoom or close clears it.
-    if (on) {
-      this.#kenBurnsFlip = false;
-      this.#setKenBurns('a');
-    }
-  }
-
-  #setKenBurns(value) {
-    this.#lightboxEl?.querySelector('.lightbox-picture')?.setAttribute('data-kb', value);
-  }
-
-  #nextKenBurns() {
-    if (!this.#lightboxEl?.classList.contains('is-cinema')) {
-      this.#setKenBurns('');
-      return;
-    }
-    this.#kenBurnsFlip = !this.#kenBurnsFlip;
-    this.#setKenBurns(this.#kenBurnsFlip ? 'b' : 'a');
-  }
-
-  #restartSlideshowTimer() {
-    if (!this.#slideshowInterval) return;
-    clearInterval(this.#slideshowInterval);
-    this.#slideshowInterval = window.setInterval(() => {
-      this.navigate(1);
-    }, 3500);
-  }
-
-  #wakeChrome() {
-    if (!this.#lightboxEl?.classList.contains('is-cinema')) return;
-    this.#lightboxEl.classList.add('chrome-awake');
-    clearTimeout(this.#chromeTimer);
-    this.#chromeTimer = setTimeout(() => this.#lightboxEl.classList.remove('chrome-awake'), 1800);
-  }
-
-  stopSlideshow() {
-    if (this.#slideshowInterval) {
-      clearInterval(this.#slideshowInterval);
-      this.#slideshowInterval = null;
-    }
-    if (this.#state === LightboxState.SLIDESHOW) {
-      this.#state = LightboxState.VIEWING;
-    }
-    if (this.#playBtn) this.#playBtn.setAttribute('aria-pressed', 'false');
-    if (this.#playLabel) this.#playLabel.textContent = 'Slideshow';
-    if (this.#slideshowBarEl) this.#slideshowBarEl.classList.remove('playing');
-    this.#setCinema(false);
-  }
-
-  #resetZoom() {
-    this.#panGlide?.kill();
-    this.#panGlide = null;
-    this.#isZoomed = false;
-    this.#panX = 0;
-    this.#panY = 0;
-    this.#isPanning = false;
-    this.#hasDragged = false;
-    if (this.#state === LightboxState.ZOOMED) {
-      this.#state = LightboxState.VIEWING;
-    }
-    if (this.#imgEl) {
-      this.#imgEl.classList.remove('zoomed');
-      this.#imgEl.classList.remove('is-panning');
-      this.#imgEl.style.transform = '';
-    }
-    if (this.#zoomBtn) this.#zoomBtn.setAttribute('aria-pressed', 'false');
-    this.#setZoomView(false);
-  }
-
-  #measurePanBounds() {
-    const scale = 1.85;
-    const w = this.#imgEl?.clientWidth || 0;
-    const h = this.#imgEl?.clientHeight || 0;
-    return {
-      maxX: w > 0 ? (w * (scale - 1)) / 2 : 180,
-      maxY: h > 0 ? (h * (scale - 1)) / 2 : 180,
-    };
-  }
-
-  #getPanBounds() {
-    return this.#panBounds;
   }
 
   #clearSourceTransitionClass() {
@@ -1035,11 +787,8 @@ class LightboxController {
         e.stopPropagation();
         if (this.#currentIndex !== idx) {
           const dir = idx > this.#currentIndex ? 'next' : 'prev';
-          this.#resetZoom();
-          this.#restartSlideshowTimer();
           this.#currentIndex = idx;
           this.#triggerFrameCrossfade(dir);
-          this.#nextKenBurns();
           this.#updateView();
         }
       });
@@ -1064,7 +813,7 @@ class LightboxController {
   #handleHashChange() {
     // Read the live hash, never evt.newURL: stepping through photos quickly queues several
     // hashchange events, and replaying their stale URLs dragged the viewer back to photos
-    // already passed (and reset zoom). A closed viewer ignores them, so a late event can't
+    // already passed. A closed viewer ignores them, so a late event can't
     // write #photo-… back into the address bar after close().
     if (!this.isOpen) return;
     const hash = window.location?.hash || '';
@@ -1086,7 +835,6 @@ class LightboxController {
     });
 
     if (foundIdx !== -1) {
-      this.#resetZoom();
       this.#currentIndex = foundIdx;
       this.#updateView();
     }
@@ -1094,24 +842,6 @@ class LightboxController {
 
   #bindEvents() {
     if (!this.#lightboxEl) return;
-
-    // While cinema controls are hidden, the first tap only wakes them: it must not land on an
-    // invisible Close button, the stage (close) or the photo (zoom).
-    let swallowNextClick = false;
-    this.#lightboxEl.addEventListener('pointermove', e => {
-      if (e.pointerType === 'mouse') this.#wakeChrome();
-    }, { passive: true });
-    this.#lightboxEl.addEventListener('pointerdown', () => {
-      swallowNextClick = this.#lightboxEl.classList.contains('is-cinema')
-        && !this.#lightboxEl.classList.contains('chrome-awake');
-      this.#wakeChrome();
-    }, { capture: true, passive: true });
-    this.#lightboxEl.addEventListener('click', e => {
-      if (!swallowNextClick) return;
-      swallowNextClick = false;
-      e.stopPropagation();
-      e.preventDefault();
-    }, { capture: true });
 
     this.#lightboxEl.addEventListener('click', e => {
       if (e.target === this.#lightboxEl || e.target.classList.contains('lightbox-stage')) {
@@ -1143,79 +873,10 @@ class LightboxController {
       });
     }
 
-    if (this.#imgEl) {
-      this.#imgEl.addEventListener('mousedown', e => {
-        if (!this.#isZoomed) return;
-        e.preventDefault();
-        this.#dragStartX = e.clientX;
-        this.#dragStartY = e.clientY;
-        this.#startPanX  = this.#panX;
-        this.#startPanY  = this.#panY;
-        this.#hasDragged = false;
-        this.#isPanning  = true;
-        this.#beginPanTracking(e.clientX, e.clientY);
-      });
-
-      window.addEventListener('mousemove', e => {
-        if (!this.#isPanning || !this.#isZoomed) return;
-        const deltaX = e.clientX - this.#dragStartX;
-        const deltaY = e.clientY - this.#dragStartY;
-        if (Math.hypot(deltaX, deltaY) > 4) {
-          this.#hasDragged = true;
-          this.#imgEl.classList.add('is-panning');
-        }
-        const { maxX, maxY } = this.#getPanBounds();
-        this.#panX = Math.max(-maxX, Math.min(maxX, this.#startPanX + deltaX));
-        this.#panY = Math.max(-maxY, Math.min(maxY, this.#startPanY + deltaY));
-        this.#imgEl.style.transform = `scale(1.85) translate3d(${this.#panX / 1.85}px, ${this.#panY / 1.85}px, 0)`;
-        this.#trackPan(e.clientX, e.clientY);
-      });
-
-      window.addEventListener('mouseup', () => {
-        if (this.#isPanning) {
-          this.#isPanning = false;
-          if (!(this.#hasDragged && this.#glidePan())) this.#imgEl?.classList.remove('is-panning');
-        }
-      });
-
-      this.#imgEl.addEventListener('wheel', e => {
-        if (!this.#isZoomed) return;
-        e.preventDefault();
-        this.#panGlide?.kill();
-        const { maxX, maxY } = this.#getPanBounds();
-        this.#panX = Math.max(-maxX, Math.min(maxX, this.#panX - e.deltaX));
-        this.#panY = Math.max(-maxY, Math.min(maxY, this.#panY - e.deltaY));
-        this.#imgEl.style.transform = `scale(1.85) translate3d(${this.#panX / 1.85}px, ${this.#panY / 1.85}px, 0)`;
-      }, { passive: false });
-
-      this.#imgEl.addEventListener('click', e => {
-        e.stopPropagation();
-        if (this.#hasDragged) {
-          this.#hasDragged = false;
-          return;
-        }
-        this.toggleZoom();
-      });
-    }
-
-    if (this.#playBtn) {
-      this.#playBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        this.toggleSlideshow();
-      });
-    }
-
-    if (this.#zoomBtn) {
-      this.#zoomBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        this.toggleZoom();
-      });
-    }
-
     window.addEventListener('hashchange', () => this.#handleHashChange());
     window.addEventListener('popstate', () => this.#handleHashChange());
 
-    // Touch swipe navigation and zoom drag-to-pan
+    // Touch swipe navigation
     let touchStartX = 0;
     let touchStartY = 0;
     let touchEndX   = 0;
@@ -1243,16 +904,6 @@ class LightboxController {
       touchStartY = e.touches[0].clientY;
       touchEndX   = touchStartX;
       touchEndY   = touchStartY;
-
-      if (this.#isZoomed && e.touches.length === 1) {
-        this.#dragStartX = touchStartX;
-        this.#dragStartY = touchStartY;
-        this.#startPanX  = this.#panX;
-        this.#startPanY  = this.#panY;
-        this.#hasDragged = false;
-        this.#isPanning  = true;
-        this.#beginPanTracking(touchStartX, touchStartY);
-      }
     }, { passive: true });
 
     this.#lightboxEl.addEventListener('touchmove', e => {
@@ -1261,21 +912,7 @@ class LightboxController {
         touchEndX = e.touches[0].clientX;
         touchEndY = e.touches[0].clientY;
 
-        if (this.#isZoomed && this.#isPanning) {
-          const deltaX = touchEndX - this.#dragStartX;
-          const deltaY = touchEndY - this.#dragStartY;
-          if (Math.hypot(deltaX, deltaY) > 4) {
-            this.#hasDragged = true;
-            this.#imgEl?.classList.add('is-panning');
-          }
-          const { maxX, maxY } = this.#getPanBounds();
-          this.#panX = Math.max(-maxX, Math.min(maxX, this.#startPanX + deltaX));
-          this.#panY = Math.max(-maxY, Math.min(maxY, this.#startPanY + deltaY));
-          if (this.#imgEl) {
-            this.#imgEl.style.transform = `scale(1.85) translate3d(${this.#panX / 1.85}px, ${this.#panY / 1.85}px, 0)`;
-          }
-          this.#trackPan(touchEndX, touchEndY);
-        } else if (!this.#isZoomed && !isMultiTouch && !this.#carouselView && this.#canFollowSwipe()) {
+        if (!isMultiTouch && !this.#carouselView && this.#canFollowSwipe()) {
           const deltaX = touchEndX - touchStartX;
           const deltaY = touchEndY - touchStartY;
           if (!swipeAxis && Math.hypot(deltaX, deltaY) > 8) {
@@ -1294,11 +931,6 @@ class LightboxController {
     }, { passive: true });
 
     this.#lightboxEl.addEventListener('touchend', () => {
-      if (this.#isZoomed) {
-        this.#isPanning = false;
-        if (!(this.#hasDragged && this.#glidePan())) this.#imgEl?.classList.remove('is-panning');
-        return;
-      }
       if (isMultiTouch) return;
       const deltaX = touchEndX - touchStartX;
       const deltaY = touchEndY - touchStartY;
@@ -1329,12 +961,9 @@ class LightboxController {
 
       if (e.key === 'Escape') {
         e.preventDefault();
+        // An enlarged print comes down first, then the viewer closes
         if (this.#carousel?.closeFocus()) return;
-        if (this.#isZoomed) {
-          this.#resetZoom();
-        } else {
-          this.close();
-        }
+        this.close();
         return;
       }
       if (e.key === 'ArrowLeft') {
@@ -1345,16 +974,6 @@ class LightboxController {
       if (e.key === 'ArrowRight') {
         e.preventDefault();
         this.navigate(1);
-        return;
-      }
-      if (e.key === 'p' || e.key === 'P') {
-        e.preventDefault();
-        this.toggleSlideshow();
-        return;
-      }
-      if (e.key === 'z' || e.key === 'Z') {
-        e.preventDefault();
-        this.toggleZoom();
         return;
       }
       if (e.key === 'Tab') {
@@ -4139,11 +3758,10 @@ void main() {
 // vendor/reactbits/LICENSE.md), written against WebGL2 directly instead of the `ogl` library.
 // The open viewer shows the category as a row of prints; past the edge of an invisible lens
 // the row bends away (the "liquid" preset). LightboxController still owns everything else:
-// which photo is current, the caption and counter, the #photo- hash, keys, arrows and the
-// slideshow. Arrows, keys and the slideshow glide the row; dragging, flicking, wheeling or
-// clicking a side print moves it and reports the photo it lands on. Clicking the centred
-// print enlarges it in place (the others part and the bend melts); Escape or another click
-// lowers it. Zoom swaps to the single matted print with pan. Changes from the original to fit
+// which photo is current, the caption and counter, the #photo- hash, keys and arrows. Arrows
+// and keys glide the row; dragging, flicking, wheeling or clicking a side print moves it and
+// reports the photo it lands on. Clicking the centred print enlarges it in place (the others
+// part and the bend melts); Escape or another click lowers it. Changes from the original to fit
 // the site: every card wears the off-white mat of the print view, photos are never cropped
 // (no 8% overscan, no in-card parallax), the "bloom" intro replays on every opening, only
 // the centred print loads its full-size file, a side print is centred on click rather than
@@ -4323,7 +3941,6 @@ void main() {
   #dirty = true;
   #resizePending = true;
   #open = false;
-  #hidden = false;
   #activeIndex = -1;
   #reported = -1;
   #pendingIndex = -1;
@@ -4369,9 +3986,9 @@ void main() {
     return Boolean(this.#gl);
   }
 
-  // True while the row is the visible view (open, and not swapped out for Zoom)
+  // True while the row is the visible view
   get isShowing() {
-    return Boolean(this.#gl) && this.#open && !this.#hidden;
+    return Boolean(this.#gl) && this.#open;
   }
 
   get #reduced() {
@@ -4569,7 +4186,6 @@ void main() {
     if (!this.#gl || !images?.length) return;
     this.#setItems(images);
     this.#open = true;
-    this.#hidden = false;
     this.#lightbox.classList.add('has-carousel');
     this.#focus.target = 0;
     this.#focus.t = 0;
@@ -4601,7 +4217,7 @@ void main() {
     }
   }
 
-  // The viewer moved to another photo (arrows, keys, slideshow, hash)
+  // The viewer moved to another photo (arrows, keys, hash)
   show(index) {
     if (!this.isShowing || index < 0 || index >= this.#slots.length) return;
     this.#reported = index;
@@ -4614,17 +4230,6 @@ void main() {
       const m = this.#layout;
       this.#goal += LightboxCarousel.#wrap(m.centers[index] - this.#goal, m.loop);
       this.#mode = 'spring';
-    }
-    this.#dirty = true;
-    this.#start();
-  }
-
-  setHidden(hidden) {
-    this.#hidden = Boolean(hidden);
-    if (this.#hidden) {
-      cancelAnimationFrame(this.#raf);
-      this.#raf = 0;
-      return;
     }
     this.#dirty = true;
     this.#start();
@@ -4813,8 +4418,7 @@ void main() {
       this.#setHover('');
     });
     canvas.addEventListener('wheel', e => this.#onWheel(e), { passive: false });
-    // Taps act on click, so the viewer's "first tap only wakes the controls" rule in the
-    // slideshow (a capture-phase click guard) also covers the row
+    // Taps act on click; the click that ends a drag is ignored in #onClick
     canvas.addEventListener('click', e => this.#onClick(e));
     new ResizeObserver(() => {
       this.#resizePending = true;
@@ -5007,7 +4611,7 @@ void main() {
   // ── Frame loop (ported) ──
 
   #start() {
-    if (this.#raf || !this.#gl || !this.#open || this.#hidden || document.hidden) return;
+    if (this.#raf || !this.#gl || !this.#open || document.hidden) return;
     this.#last = 0;
     this.#raf = requestAnimationFrame(t => this.#frame(t));
   }
@@ -5040,7 +4644,7 @@ void main() {
 
   #frame(now) {
     this.#raf = 0;
-    if (!this.#gl || !this.#open || this.#hidden || document.hidden) return;
+    if (!this.#gl || !this.#open || document.hidden) return;
     if (this.#resizePending) {
       this.#resizePending = false;
       this.#applyResize();
@@ -5296,7 +4900,7 @@ void main() {
     this.#open = false;
     this.#slots = [];
     this.#canvas?.remove();
-    this.#lightbox?.classList.remove('has-carousel', 'is-zoom-view');
+    this.#lightbox?.classList.remove('has-carousel');
   }
 }
 

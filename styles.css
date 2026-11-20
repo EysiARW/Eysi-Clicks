@@ -1064,12 +1064,11 @@ html[data-theme="dark"] .theme-icon-moon { display: none; }
 }
 
 /* The lightbox is always dark: champagne on its dark glass, bronze once a control fills white */
-.btn-specular:is(.lb-tool-btn, .lightbox-close, .lightbox-nav) {
+.btn-specular:is(.lightbox-close, .lightbox-nav) {
   --specular-line: #f3e7d3;
   --specular-base: #826a4e;
 }
 
-.btn-specular.lb-tool-btn:is(:hover, [aria-pressed="true"]),
 .btn-specular.lightbox-close:hover {
   --specular-line: #826a4e;
   --specular-base: #c5ad8d;
@@ -2389,9 +2388,9 @@ html[data-theme="dark"] .photo-item img {
 
 /* Carousel view (LightboxCarousel): the open viewer shows the category as a row of matted
    prints on a WebGL canvas over the whole lightbox (under the top bar, arrows and caption).
-   In that view the caption and counter sit at the foot, the single print's mat collapses to
-   the slideshow progress line under them, and the thumbnail strip steps aside because the
-   row itself is the way through the set. Zoom (.is-zoom-view) brings the single print back. */
+   In that view the caption and counter sit at the foot, and the single print and the
+   thumbnail strip step aside because the row itself is the way through the set. Both come
+   back in the classic view (no WebGL2). */
 .lightbox-carousel {
   position: absolute;
   inset: 0;
@@ -2411,28 +2410,13 @@ html[data-theme="dark"] .photo-item img {
 .lightbox-carousel[data-hover='close'] { cursor: zoom-out; }
 .lightbox-carousel[data-dragging] { cursor: grabbing; }
 
-.lightbox.is-zoom-view .lightbox-carousel {
-  visibility: hidden;
-}
-
-.lightbox.has-carousel:not(.is-zoom-view) {
+.lightbox.has-carousel {
   justify-content: flex-end;
 }
 
-.lightbox.has-carousel:not(.is-zoom-view) .lightbox-mat-viewport,
-.lightbox.has-carousel:not(.is-zoom-view) .lightbox-frame-wrap::after,
-.lightbox.has-carousel:not(.is-zoom-view) .lightbox-filmstrip {
+.lightbox.has-carousel .lightbox-frame-wrap,
+.lightbox.has-carousel .lightbox-filmstrip {
   display: none;
-}
-
-.lightbox.has-carousel:not(.is-zoom-view) .lightbox-frame-wrap {
-  order: 1;
-  width: min(60vw, 420px);
-  height: 2px;
-  margin-top: 0.6rem;
-  padding: 0;
-  background: none;
-  box-shadow: none;
 }
 
 .lightbox.open {
@@ -2452,54 +2436,6 @@ html[data-theme="dark"] .photo-item img {
 
 .lightbox.is-flying .lightbox-img {
   opacity: 0;
-}
-
-/* Cinema slideshow: controls fade out while the slideshow plays and return on pointer
-   movement (.chrome-awake) or keyboard focus; each frame slowly pushes in, alternating drift. */
-.lightbox.is-cinema .lightbox-topbar,
-.lightbox.is-cinema .lightbox-nav,
-.lightbox.is-cinema .lightbox-filmstrip {
-  opacity: 0;
-  transition: opacity 0.6s ease;
-}
-
-/* Hidden controls must not catch taps (keyboard focus still reaches them and reveals them) */
-.lightbox.is-cinema:not(.chrome-awake) .lightbox-topbar,
-.lightbox.is-cinema:not(.chrome-awake) .lightbox-nav,
-.lightbox.is-cinema:not(.chrome-awake) .lightbox-filmstrip {
-  pointer-events: none;
-}
-
-.lightbox.is-cinema.chrome-awake .lightbox-topbar,
-.lightbox.is-cinema.chrome-awake .lightbox-nav,
-.lightbox.is-cinema.chrome-awake .lightbox-filmstrip,
-.lightbox.is-cinema .lightbox-topbar:has(:focus-visible),
-.lightbox.is-cinema .lightbox-nav:focus-visible,
-.lightbox.is-cinema .lightbox-filmstrip:has(:focus-visible) {
-  opacity: 1;
-  transition-duration: 0.2s;
-}
-
-.lightbox-picture[data-kb="a"] {
-  animation: kenBurnsA 3.8s cubic-bezier(0.33, 0, 0.2, 1) both;
-}
-
-.lightbox-picture[data-kb="b"] {
-  animation: kenBurnsB 3.8s cubic-bezier(0.33, 0, 0.2, 1) both;
-}
-
-.lightbox.is-cinema .lightbox-img.frame-crossfade[data-nav-dir] {
-  animation: photoCrossfade 0.6s ease;
-}
-
-@keyframes kenBurnsA {
-  from { transform: scale(1); }
-  to   { transform: scale(1.05) translate3d(-0.9%, -0.5%, 0); }
-}
-
-@keyframes kenBurnsB {
-  from { transform: scale(1); }
-  to   { transform: scale(1.05) translate3d(0.9%, 0.5%, 0); }
 }
 
 /* Stand-in photo that flies from the lightbox back into its card on close */
@@ -2550,41 +2486,6 @@ html[data-theme="dark"] .photo-item img {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.lb-tool-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  height: 44px;
-  padding: 0 1rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(24, 24, 28, 0.65);
-  color: rgba(255, 255, 255, 0.78);
-  font-family: var(--font-interphases);
-  font-size: var(--fs-caption);
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition: transform 0.22s var(--shutter-ease), box-shadow 0.22s var(--shutter-ease), background-color 0.22s var(--shutter-ease), border-color 0.22s var(--shutter-ease), color 0.22s var(--shutter-ease), opacity 0.22s var(--shutter-ease);
-}
-
-.lb-tool-btn svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
-.lb-tool-btn:hover,
-.lb-tool-btn[aria-pressed="true"] {
-  background: #ffffff;
-  color: #0a0a0b;
-  border-color: #ffffff;
-}
-
-@media (max-width: 640px) {
-  .lb-tool-btn span { display: none; }
-  .lb-tool-btn { padding: 0 0.75rem; }
 }
 
 .lightbox-close {
@@ -2676,8 +2577,6 @@ html[data-theme="dark"] .photo-item img {
   will-change: transform, opacity;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
-  cursor: zoom-in;
   user-select: none;
   -webkit-user-select: none;
   view-transition-name: active-artwork;
@@ -2726,39 +2625,6 @@ html[data-theme="dark"] .photo-item img {
 
 .lightbox-img.frame-crossfade[data-nav-dir="prev"] {
   animation: bmPhotoSlidePrev 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.lightbox-img.zoomed {
-  transform: scale(1.85);
-  cursor: grab;
-  z-index: 15;
-}
-
-.lightbox-img.zoomed.is-panning {
-  cursor: grabbing;
-  transition: none !important;
-}
-
-/* Slideshow Progress Bar */
-.lightbox-slideshow-bar {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: 0%;
-  background: #ffffff;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.lightbox-slideshow-bar.playing {
-  opacity: 0.9;
-  animation: slideshowProgress 3.5s linear infinite;
-}
-
-@keyframes slideshowProgress {
-  from { width: 0%; }
-  to   { width: 100%; }
 }
 
 .lightbox-caption {
@@ -2932,7 +2798,7 @@ html[data-theme="dark"] .photo-item img {
       transform: scale(1.06);
     }
   }
-  .lightbox.open.has-carousel:not(.is-zoom-view) {
+  .lightbox.open.has-carousel {
     align-content: end;
   }
   .lightbox-prev {
@@ -3607,7 +3473,6 @@ footer .ft-sub {
 
 .lightbox-close:focus-visible,
 .lightbox-nav:focus-visible,
-.lb-tool-btn:focus-visible,
 .filmstrip-thumb:focus-visible {
   outline: 2px solid #ffffff;
   outline-offset: 3px;

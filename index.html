@@ -278,7 +278,7 @@
 
     <noscript>
       <div class="noscript-notice">
-        <p>Viewing the interactive portfolio with filter switching, slideshow, and full-resolution photo inspection requires JavaScript.</p>
+        <p>Viewing the interactive portfolio with filter switching and the full-size photo viewer requires JavaScript.</p>
       </div>
     </noscript>
 
@@ -509,21 +509,6 @@
       </div>
 
       <div class="lightbox-toolbar">
-        <button type="button" class="lb-tool-btn btn-specular" id="lb-play-btn" aria-pressed="false" title="Toggle Slideshow (P)">
-          <svg class="icon-play" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <polygon points="5,3 15,9 5,15" fill="currentColor"></polygon>
-          </svg>
-          <span id="lb-play-label">Slideshow</span>
-        </button>
-
-        <button type="button" class="lb-tool-btn btn-specular" id="lb-zoom-btn" aria-pressed="false" title="Toggle Zoom (Z)">
-          <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <circle cx="8" cy="8" r="5.5"></circle>
-            <path d="M15.5 15.5l-3.5-3.5M8 5.5v5M5.5 8h5" stroke-linecap="round"></path>
-          </svg>
-          <span>Zoom</span>
-        </button>
-
         <button type="button" class="lightbox-close btn-specular" id="lightbox-close" aria-label="Close photo viewer">
           <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
             <path d="M4 4l10 10M14 4L4 14" stroke-linecap="round"></path>
@@ -543,10 +528,9 @@
         <div class="lightbox-mat-viewport">
           <picture class="lightbox-picture">
             <source id="lightbox-source-webp" srcset="predebut/portrait/EYSI-2-22.webp" type="image/webp">
-            <img class="lightbox-img" id="lightbox-img" src="predebut/portrait/EYSI-2-22.jpg" alt="Featured photograph — Avegail @18" title="Click to zoom or inspect detail" width="1600" height="1066" loading="lazy" fetchpriority="low" decoding="async">
+            <img class="lightbox-img" id="lightbox-img" src="predebut/portrait/EYSI-2-22.jpg" alt="Featured photograph — Avegail @18" width="1600" height="1066" loading="lazy" fetchpriority="low" decoding="async">
           </picture>
         </div>
-        <div class="lightbox-slideshow-bar" id="lightbox-slideshow-bar" aria-hidden="true"></div>
       </div>
 
       <div class="lightbox-caption" id="lightbox-caption">
